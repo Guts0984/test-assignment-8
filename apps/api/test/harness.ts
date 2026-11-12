@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { agentCategories, users, type Db } from '@helpdesk/db';
 import { hashPassword } from '../src/lib/passwords';
 
@@ -20,6 +22,7 @@ export type Api = {
   port: number;
   url: string;
   pid: number;
+  uploadsDir: string;
   logs: () => string;
   /** Sends the signal and resolves with the exit code once the process is gone. */
   stop: (signal?: NodeJS.Signals) => Promise<number | null>;
@@ -32,6 +35,7 @@ export const startApi = async (
   opts: { waitReady?: boolean } = {},
 ): Promise<Api> => {
   const port = await freePort();
+  const uploadsDir = env.UPLOADS_DIR ?? mkdtempSync(path.join(tmpdir(), 'hd-uploads-'));
   const child: ChildProcess = spawn(process.execPath, ['dist/main.js'], {
     cwd: path.resolve(__dirname, '..'),
     env: {
@@ -43,6 +47,8 @@ export const startApi = async (
       LOG_LEVEL: 'warn',
       AUTO_MIGRATE: 'false',
       AUTO_SEED: 'false',
+      WORKER_ENABLED: 'false', // job tests start their own worker; other suites must not have jobs mutate their fixtures
+      UPLOADS_DIR: uploadsDir,
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -55,6 +61,7 @@ export const startApi = async (
     port,
     url: `http://127.0.0.1:${port}`,
     pid: child.pid ?? -1,
+    uploadsDir,
     logs: () => out,
     exited,
     stop: async (signal = 'SIGTERM') => {
@@ -385,3 +392,175 @@ export const createExtraAgents = async (
   }
   return out;
 };
+
+/* ---------------------------------------------------------------- uploads */
+
+export type Part = { name: string; filename?: string; contentType?: string; data: Buffer | string };
+
+export const multipart = (
+  parts: Part[],
+  boundary = 'xBoUnDaRyx',
+): { body: Buffer; contentType: string } => {
+  const chunks: Buffer[] = [];
+  for (const p of parts) {
+    const disp = `Content-Disposition: form-data; name="${p.name}"${p.filename !== undefined ? `; filename="${p.filename}"` : ''}`;
+    chunks.push(
+      Buffer.from(
+        `--${boundary}\r\n${disp}\r\n${p.contentType ? `Content-Type: ${p.contentType}\r\n` : ''}\r\n`,
+      ),
+      Buffer.isBuffer(p.data) ? p.data : Buffer.from(p.data),
+      Buffer.from('\r\n'),
+    );
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
+  return { body: Buffer.concat(chunks), contentType: `multipart/form-data; boundary=${boundary}` };
+};
+
+export const upload = (
+  api: Pick<Api, 'port'>,
+  s: Session,
+  file: { name: string; data: Buffer | string; contentType?: string },
+  from?: string,
+) => {
+  const m = multipart([
+    {
+      name: 'file',
+      filename: file.name,
+      contentType: file.contentType ?? 'application/octet-stream',
+      data: file.data,
+    },
+  ]);
+  return request(api, {
+    method: 'POST',
+    path: '/attachments',
+    body: m.body,
+    headers: { 'content-type': m.contentType },
+    cookie: s.cookie,
+    ...(from ? { from } : {}),
+  });
+};
+
+export const FILES = {
+  png: Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from('IHDR-fake-but-valid-magic'),
+  ]),
+  jpeg: Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('JFIF-fake')]),
+  gif: Buffer.from('GIF89a-fake-gif-data'),
+  webp: Buffer.concat([
+    Buffer.from('RIFF'),
+    Buffer.from([0x10, 0, 0, 0]),
+    Buffer.from('WEBPVP8 fake'),
+  ]),
+  pdf: Buffer.from('%PDF-1.7\n%fake pdf body\n%%EOF'),
+  text: Buffer.from('Hello, звіт №1 — plain text\nline two\n'),
+  exe: Buffer.concat([
+    Buffer.from('MZ'),
+    Buffer.alloc(62),
+    Buffer.from('PE\0\0 This program cannot be run in DOS mode.'),
+  ]),
+  elf: Buffer.concat([Buffer.from([0x7f]), Buffer.from('ELF'), Buffer.alloc(40, 1)]),
+  zip: Buffer.concat([Buffer.from('PK'), Buffer.from([3, 4]), Buffer.alloc(40)]),
+  html: Buffer.from('<html><script>alert(1)</script></html>'),
+  svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+  shell: Buffer.from('#!/bin/sh\nrm -rf /\n\u0000'),
+} as const;
+
+/** A tiny SSE client: collects frames; `waitFor` resolves when a matching event arrives. */
+export type SseFrame = { id: string | null; event: string; data: Record<string, unknown> };
+export const openEvents = (
+  api: Pick<Api, 'port'>,
+  s: Session,
+  opts: { from?: string; lastEventId?: string; cookie?: string } = {},
+) =>
+  new Promise<{
+    status: number;
+    headers: http.IncomingHttpHeaders;
+    frames: SseFrame[];
+    raw: () => string;
+    close: () => void;
+    ended: Promise<void>;
+    waitFor: (pred: (f: SseFrame) => boolean, ms?: number) => Promise<SseFrame>;
+  }>((resolve, reject) => {
+    const frames: SseFrame[] = [];
+    let raw = '';
+    const waiters: Array<{ pred: (f: SseFrame) => boolean; resolve: (f: SseFrame) => void }> = [];
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: api.port,
+        path: '/events',
+        method: 'GET',
+        agent: false,
+        ...(opts.from ? { localAddress: opts.from } : {}),
+        headers: {
+          cookie: opts.cookie ?? s.cookie,
+          accept: 'text/event-stream',
+          ...(opts.lastEventId ? { 'last-event-id': opts.lastEventId } : {}),
+        },
+      },
+      (res) => {
+        let buf = '';
+        const ended = new Promise<void>((r) => {
+          res.on('close', () => r());
+          res.on('end', () => r());
+        });
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          raw += chunk;
+          buf += chunk;
+          let i: number;
+          while ((i = buf.indexOf('\n\n')) !== -1) {
+            const block = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            const lines = block.split('\n');
+            const event = lines.find((l) => l.startsWith('event: '))?.slice(7);
+            const data = lines.find((l) => l.startsWith('data: '))?.slice(6);
+            if (!event || !data) continue;
+            const f: SseFrame = {
+              id: lines.find((l) => l.startsWith('id: '))?.slice(4) ?? null,
+              event,
+              data: JSON.parse(data) as Record<string, unknown>,
+            };
+            frames.push(f);
+            for (const w of [...waiters])
+              if (w.pred(f)) {
+                waiters.splice(waiters.indexOf(w), 1);
+                w.resolve(f);
+              }
+          }
+        });
+        resolve({
+          status: res.statusCode ?? 0,
+          headers: res.headers,
+          frames,
+          raw: () => raw,
+          ended,
+          close: () => req.destroy(),
+          waitFor: (pred, ms = 5_000) =>
+            new Promise<SseFrame>((res2, rej) => {
+              const hit = frames.find(pred);
+              if (hit) return res2(hit);
+              const t = setTimeout(
+                () =>
+                  rej(
+                    new Error(
+                      `no matching SSE event within ${ms} ms; got: ${JSON.stringify(frames.map((f) => f.event))}`,
+                    ),
+                  ),
+                ms,
+              );
+              waiters.push({
+                pred,
+                resolve: (f) => {
+                  clearTimeout(t);
+                  res2(f);
+                },
+              });
+            }),
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });

@@ -21,6 +21,10 @@ ENV NODE_ENV=production
 WORKDIR /app
 # /out = the api + its production dependencies only (incl. the built @helpdesk/shared and @helpdesk/db)
 COPY --from=build --chown=node:node /out ./
+# attachments volume: created and owned by the unprivileged user so a named volume inherits the ownership
+RUN mkdir -p /data/uploads && chown node:node /data/uploads
+ENV UPLOADS_DIR=/data/uploads
+VOLUME /data/uploads
 USER node
 EXPOSE 3001
 CMD ["node", "dist/main.js"]

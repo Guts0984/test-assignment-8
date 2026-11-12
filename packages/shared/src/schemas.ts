@@ -275,7 +275,8 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('ticket.changed'),
     ticketId: uuidSchema,
-    version: z.number().int(),
+    /** Absent for changes that do not bump the version (SLA marks). */
+    version: z.number().int().optional(),
     changed: z.array(z.string()),
   }),
   z.object({ type: z.literal('ticket.created'), ticketId: uuidSchema }),

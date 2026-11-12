@@ -29,6 +29,21 @@ const rawEnvSchema = z.object({
   AUTO_MIGRATE: bool.default(true),
   AUTO_SEED: bool.default(false),
 
+  /** Where attachments live on disk (a docker volume in compose). */
+  UPLOADS_DIR: z.string().min(1).default('./uploads'),
+  UPLOAD_PER_MIN: int(30, 1, 10_000),
+  /** Uploaded-but-not-yet-sent files a user may hold (they are purged after 24 h). */
+  UPLOAD_MAX_PENDING: int(50, 1, 1_000),
+  /** Uploads processed at once (each is buffered in memory, up to 10 MB). */
+  UPLOAD_CONCURRENCY: int(4, 1, 64),
+
+  WORKER_ENABLED: bool.default(true),
+  JOB_POLL_MS: int(1_000, 50, 60_000),
+  JOB_LEASE_SECONDS: int(120, 5, 3_600),
+  SSE_MAX_PER_USER: int(5, 1, 100),
+  SSE_MAX_PER_IP: int(30, 1, 10_000),
+  SSE_HEARTBEAT_MS: int(15_000, 50, 120_000),
+
   SESSION_TTL_HOURS: int(24 * 7, 1, 24 * 365),
   SESSION_MAX_PER_USER: int(10, 1, 100),
   COOKIE_NAME: z

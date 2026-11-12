@@ -1,5 +1,5 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { Pool, type PoolConfig } from 'pg';
+import { Client, Pool, type PoolConfig } from 'pg';
 import * as schema from './schema';
 
 export type Db = NodePgDatabase<typeof schema>;
@@ -18,3 +18,7 @@ export const createDb = (
   pool.on('error', () => undefined);
   return { db: drizzle(pool, { schema }), pool, close: () => pool.end() };
 };
+
+/** A dedicated connection for LISTEN/NOTIFY (a pooled connection would be handed to other queries). */
+export const createListener = (connectionString: string): Client =>
+  new Client({ connectionString });

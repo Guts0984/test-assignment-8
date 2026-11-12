@@ -122,3 +122,41 @@ export const agentDtoSchema = z.object({
   categories: z.array(categorySchema),
 });
 export type AgentDto = z.infer<typeof agentDtoSchema>;
+
+export const notificationDtoSchema = z.object({
+  id: uuidSchema,
+  type: z.enum(['assigned', 'customer_replied', 'sla_warning', 'sla_breached']),
+  ticket: z.object({ id: uuidSchema, code: z.string(), subject: z.string() }),
+  createdAt: isoDateTimeSchema,
+  readAt: isoDateTimeSchema.nullable(),
+});
+export type NotificationDto = z.infer<typeof notificationDtoSchema>;
+
+export const notificationListSchema = z.object({
+  items: z.array(notificationDtoSchema),
+  unreadCount: z.number().int(),
+});
+export type NotificationList = z.infer<typeof notificationListSchema>;
+
+export const statsSchema = z.object({
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  created: z.number().int(),
+  resolved: z.number().int(),
+  /** Wall-clock seconds; null when there is nothing to average. */
+  avgFirstResponseSeconds: z.number().nullable(),
+  avgResolutionSeconds: z.number().nullable(),
+  /** Share (0–100) of tickets created in the period that breached any SLA deadline. */
+  slaBreachPercent: z.number().nullable(),
+  avgRating: z.number().nullable(),
+  ratingCount: z.number().int(),
+  workload: z.array(
+    z.object({
+      agent: userRefSchema,
+      active: z.number().int(),
+      resolvedInPeriod: z.number().int(),
+      breached: z.number().int(),
+    }),
+  ),
+});
+export type Stats = z.infer<typeof statsSchema>;

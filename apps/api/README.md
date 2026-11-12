@@ -127,3 +127,47 @@ Over 20 000 seeded tickets the test suite asserts p95 < 200 ms and worst < 400 m
 - Agents cannot change the category (a moved ticket could vanish from their view); the lead re-routes.
 - Changing SLA policies does not retro-fit existing tickets.
 - Tag filter is AND (`tags=a,b` = both).
+
+---
+
+# Attachments, jobs, realtime, stats (block 5)
+
+## Attachments
+
+`POST /attachments` (multipart, field `file`) → `{ id, name, mime, sizeBytes }`; send the id in `attachmentIds` of a message or a new ticket. `GET /attachments/:id` downloads.
+
+- **Type by content**: magic bytes decide (png, jpeg, gif, webp, pdf; otherwise valid UTF-8 text without control characters = `text/plain`). The name and the client's `Content-Type` are ignored. An `.exe` renamed `.png` → `415`. HTML/SVG are just text: stored as `text/plain` and served inert (never executed).
+- **Size**: 10 MB enforced **while streaming** (a counting stream in front of Node's multipart parser): a 5 GB body is cut off after the limit, never buffered whole. Empty files, extra fields, a second file, malformed or truncated multipart → `4xx`, nothing on disk, no row.
+- **Disk**: random UUID names, written to a temp file and renamed atomically; the display name is sanitised (no directories, control or bidi characters). The DB row and the file are rolled back together. Directory = `UPLOADS_DIR` (docker volume `/data/uploads`).
+- **Quotas**: `UPLOAD_PER_MIN` per user, at most `UPLOAD_MAX_PENDING` unsent files per user, at most `UPLOAD_CONCURRENCY` uploads processed at once (each is buffered, ≤ 10 MB).
+- **Access**: a sent file is readable by whoever can read its message: ticket owner / agent of the category or assignee / lead — and **never by a customer if the message is an internal note**; an unsent file only by its uploader. Everything else is `404`, identical to "does not exist".
+- **Serving**: `X-Content-Type-Options: nosniff`, exact detected type, forced download for PDF/text (images inline), `Content-Security-Policy: default-src 'none'; sandbox`, `Cache-Control: private, no-store`.
+- Unsent uploads are deleted after 24 h by a job (row first, then the file); stale `.tmp-` files after 1 h.
+
+## Background jobs (PostgreSQL, no external queue)
+
+| Job                  | Every  | What                                                                                                                                                                      |
+| -------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sla-scan`           | 60 s   | warns the assignee **30 min before** a deadline; marks first-response / resolution **breaches** (stamped with the deadline); only tickets whose clock runs (`new`/`open`) |
+| `auto-close`         | 60 s   | `resolved` with no customer reply for **3 days** → `closed` (history actor = system)                                                                                      |
+| `orphan-attachments` | 10 min | deletes unsent uploads older than 24 h                                                                                                                                    |
+| `housekeeping`       | 5 min  | purges stale rate-limit rows, presence, event log (> 1 day), finished jobs (> 7 days), expired sessions                                                                   |
+
+Queue: table `jobs`; claim = `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)` with a **lease** (`JOB_LEASE_SECONDS`). A crashed worker's job returns to the queue when the lease expires; failures retry with exponential backoff up to `max_attempts`. Each recurring job has one dedupe key, so exactly one instance is ever queued (finish + next-schedule happen in one transaction). Handlers are idempotent (`UPDATE … WHERE mark IS NULL`, deduplicated notifications), so two api instances never act twice — tested with 2 racing workers, parallel scans and crash recovery. Handlers take an injectable clock; tests move time instead of sleeping. SIGTERM stops polling and waits for the job in progress.
+
+## Realtime (SSE)
+
+`GET /events`: `message.created`, `ticket.created`, `ticket.changed`, `notification.created`, `presence`. Events are written to `event_log` in the same transaction as the change; `pg_notify` wakes the dispatcher (a dedicated `LISTEN` connection; a 3 s poll is the safety net, it reconnects by itself). **Permissions are checked at delivery, per connection and per event**: customers never get internal-note events or other tickets; an agent stops receiving a ticket the moment it leaves their scope; notifications go only to their target. `Last-Event-ID` replays what was missed (last hour, same filters). Caps per user and per address, heartbeat every `SSE_HEARTBEAT_MS` which also **ends the stream when the session is gone**, slow consumers are dropped, SIGTERM closes all streams first.
+
+`POST /tickets/:id/typing` / `GET /tickets/:id/presence` ("Ivan is replying"): staff only, expires after 8 s without refresh.
+
+## Notifications & stats
+
+`GET /notifications` (latest 50 + unread count, hides tickets the user can no longer see), `POST /notifications/read`. `GET /stats?from&to` (lead): created, resolved, average first response / resolution (wall-clock seconds), % of created tickets that breached an SLA, average rating, load per agent. Checked against a hand-computed fixture.
+
+## Decisions & limitations
+
+- Uploads are buffered in memory (≤ 10 MB × `UPLOAD_CONCURRENCY`) behind a bounded semaphore; streaming straight to disk would need a multipart library (a dependency I avoided).
+- SLA warnings/breaches notify the **assignee** only; unassigned tickets are marked (so the lead's "breached" filter works) but nobody is notified.
+- Averages use wall-clock time, not business time.
+- A file whose DB row was deleted but whose process died before unlinking it stays on disk (no row points to it); the temp-file sweep covers interrupted uploads only.

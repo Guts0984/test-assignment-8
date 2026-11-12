@@ -11,6 +11,12 @@ import { createSemaphore } from './lib/semaphore';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthController } from './auth/auth.controller';
 import { HealthController } from './health/health.controller';
+import { AttachmentsController } from './attachments/attachments.controller';
+import type { Storage } from './attachments/storage';
+import { NotificationsController } from './notifications/notifications.controller';
+import { RealtimeController } from './realtime/realtime.controller';
+import type { Realtime } from './realtime/realtime';
+import { StatsController } from './stats/stats.controller';
 import { TicketsController } from './tickets/tickets.controller';
 import {
   AgentsController,
@@ -19,7 +25,15 @@ import {
   SlaController,
 } from './tickets/staff.controller';
 
-export type AppDeps = { env: Env; db: DbHandle; limiter: Limiter; logger: Logger; state: AppState };
+export type AppDeps = {
+  env: Env;
+  db: DbHandle;
+  limiter: Limiter;
+  logger: Logger;
+  state: AppState;
+  storage: Storage;
+  realtime: Realtime;
+};
 
 @Global()
 @Module({})
@@ -30,6 +44,10 @@ export class CoreModule {
       controllers: [
         HealthController,
         AuthController,
+        AttachmentsController,
+        RealtimeController,
+        NotificationsController,
+        StatsController,
         TicketsController,
         CannedController,
         SavedViewsController,
@@ -42,6 +60,9 @@ export class CoreModule {
         { provide: TOKENS.LIMITER, useValue: deps.limiter },
         { provide: TOKENS.LOGGER, useValue: deps.logger },
         { provide: TOKENS.STATE, useValue: deps.state },
+        { provide: TOKENS.STORAGE, useValue: deps.storage },
+        { provide: TOKENS.REALTIME, useValue: deps.realtime },
+        { provide: TOKENS.UPLOAD_GATE, useValue: createSemaphore(deps.env.UPLOAD_CONCURRENCY, 16) },
         {
           provide: TOKENS.LOGIN_GATE,
           useValue: createSemaphore(deps.env.LOGIN_MAX_CONCURRENCY, deps.env.LOGIN_QUEUE_MAX),

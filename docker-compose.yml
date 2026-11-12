@@ -29,6 +29,7 @@ services:
       PORT: 3001
       # a plain-http local run: browsers drop Secure cookies on http://localhost in some setups
       COOKIE_SECURE: 'false'
+      UPLOADS_DIR: /data/uploads
     ports:
       - '127.0.0.1:${PORT:-3001}:3001'
     depends_on:
@@ -46,7 +47,10 @@ services:
       timeout: 3s
       retries: 30
       start_period: 90s
+    volumes:
+      - uploads:/data/uploads
     stop_grace_period: 15s
 
 volumes:
   pgdata:
+  uploads:

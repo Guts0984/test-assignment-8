@@ -9,6 +9,9 @@ import { loadEnv } from './env';
 import { CoreModule } from './core';
 import { apiRateLimit, csrfProtection, errorHandler, requestContext } from './http/middleware';
 import type { AppState } from './http/types';
+import { createRealtime } from './realtime/realtime';
+import { startWorker } from './jobs/worker';
+import { createStorage } from './attachments/storage';
 import { createLimiter } from './lib/limiter';
 import { createLogger } from './lib/logger';
 import { buildOriginPolicy } from './lib/origins';
@@ -33,9 +36,13 @@ const bootstrap = async (): Promise<void> => {
     logger.info(result.skipped ? 'seed skipped' : 'seeded', result.skipped ? {} : { ...result });
   }
   const limiter = createLimiter(db.db);
+  const storage = createStorage(env.UPLOADS_DIR);
+  await storage.ensure();
+  const realtime = createRealtime({ db: db.db, databaseUrl: env.DATABASE_URL, logger });
+  await realtime.start();
 
   const app = await NestFactory.create<NestExpressApplication>(
-    CoreModule.register({ env, db, limiter, logger, state }),
+    CoreModule.register({ env, db, limiter, logger, state, storage, realtime }),
     {
       bodyParser: false,
       logger: env.LOG_LEVEL === 'debug' ? ['error', 'warn', 'log'] : ['error'],
@@ -95,12 +102,12 @@ const bootstrap = async (): Promise<void> => {
   });
   logger.info('listening', { host: env.HOST, port: env.PORT });
 
-  const purge = setInterval(() => {
-    limiter
-      .purge()
-      .catch((err: unknown) => logger.warn('rate-limit purge failed', { err: String(err) }));
-  }, 60_000);
-  purge.unref();
+  const worker = env.WORKER_ENABLED
+    ? startWorker(
+        { db: db.db, storage, logger, now: () => new Date() },
+        { pollMs: env.JOB_POLL_MS, leaseSeconds: env.JOB_LEASE_SECONDS },
+      )
+    : undefined;
 
   // ---- graceful shutdown: stop accepting, let in-flight requests finish, exit 0 ----
   let shuttingDown = false;
@@ -109,18 +116,21 @@ const bootstrap = async (): Promise<void> => {
     shuttingDown = true;
     state.draining = true;
     logger.info('shutting down', { signal });
-    clearInterval(purge);
     const forced = setTimeout(() => {
       logger.error('shutdown timed out; closing remaining connections');
       server.closeAllConnections();
       process.exit(1);
     }, env.SHUTDOWN_TIMEOUT_MS);
     forced.unref();
+    // end event streams first: they never finish on their own and would block server.close()
+    void realtime.stop();
     server.close(() => {
-      db.close().then(
-        () => process.exit(0),
-        () => process.exit(0),
-      );
+      Promise.resolve(worker?.stop())
+        .then(() => db.close())
+        .then(
+          () => process.exit(0),
+          () => process.exit(0),
+        );
     });
     server.closeIdleConnections();
     // idle keep-alive sockets that become idle while draining must not hold the process open
