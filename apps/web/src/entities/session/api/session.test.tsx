@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { API, ME, envelope, http, HttpResponse, makeClient, server } from '../../../../test/utils';
 import { fetchMe, homePathFor, sessionKeys, useLogin, useLogout, useMe } from './session';
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 

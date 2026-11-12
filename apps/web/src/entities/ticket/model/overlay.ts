@@ -8,6 +8,8 @@ export type OverlayOptions = {
   matches: (t: TicketDto) => boolean;
   sort: SortKey;
   order: Order;
+  /** Every page of this list is loaded (no further cursor): a ticket that sorts last is appended instead of left to a later page. */
+  complete?: boolean;
 };
 
 const keyOf = (t: TicketDto, sort: SortKey): string | null =>
@@ -55,7 +57,7 @@ export const overlayTicket = (
   // new ticket: insert where the API ordering would put it. If it sorts after everything we hold it may belong to a page
   // we have not loaded yet, so it is NOT appended (the next page will deliver it).
   const at = items.findIndex((t) => compareTickets(incoming, t, opts.sort, opts.order) < 0);
-  if (at === -1) return items;
+  if (at === -1) return opts.complete ? [...items, incoming] : items;
   return [...items.slice(0, at), incoming, ...items.slice(at)];
 };
 

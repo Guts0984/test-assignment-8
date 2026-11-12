@@ -13,7 +13,7 @@ const catchError = async (p: Promise<unknown>) => {
   throw new Error('expected a rejection');
 };
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 

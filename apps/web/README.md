@@ -1,12 +1,11 @@
 # @helpdesk/web — Next.js 15 (App Router, React 19)
 
-Block 6: the foundation. Sign-in, the authenticated shell, i18n (uk/en), dark theme, the typed API client,
-the live-update plumbing (SSE client + the reducer that overlays events on a visible list) and the accessibility primitives.
-The customer and staff screens are the next block.
+Foundation (sign-in, shell, i18n uk/en, dark theme, typed API client, SSE client + overlay reducer, accessibility primitives)
+and the screens: the customer cabinet and the staff work place.
 
 ```bash
 cp .env.example .env && docker compose up --build      # web on http://localhost:3000 (api only behind /api/*)
-pnpm --filter @helpdesk/web test                       # 134 unit tests (Vitest + Testing Library + MSW + axe)
+pnpm --filter @helpdesk/web test                       # 295 unit tests (Vitest + Testing Library + MSW + axe)
 ```
 
 ## Structure (Feature-Sliced Design)
@@ -15,10 +14,11 @@ pnpm --filter @helpdesk/web test                       # 134 unit tests (Vitest 
 app/                  Next routing shell — each file just re-exports a page from src/pages
 pages/                EMPTY on purpose: Next treats src/pages as the Pages Router; this folder makes it ignore it
 src/app/              providers (React Query, theme, announcer), styles, next-intl request config
-src/pages/            login, home (redirect), tickets, queue            ← compose widgets/features
-src/widgets/          app-shell (header, nav, auth gate, <main> landmark)
-src/features/         auth-login, switch-locale, toggle-theme, realtime (SSE client)
-src/entities/         session (useMe/useLogin/useLogout), ticket (overlay reducer)
+src/pages/            login, home, tickets, tickets/new, ticket/[id], queue, dashboard, settings  ← compose widgets/features
+src/widgets/          app-shell, ticket-thread (timeline), ticket-table, stats-dashboard, sla-settings, canned-manager
+src/features/         auth-login, create-ticket, reply-composer, attachments-upload, ticket-sidebar, ticket-filters,
+                      bulk-actions, take-next, hotkeys, notifications, rate-ticket, realtime, switch-locale, toggle-theme
+src/entities/         session, ticket (queries, filters ⇄ URL, overlay reducers), agent (staff api hooks)
 src/shared/           api client, ui kit (shadcn-style), i18n catalogues, form resolver, formatting
 ```
 
@@ -35,3 +35,19 @@ Classes are banned in the web (they exist only in the NestJS api).
 - **Accessibility**: skip link, landmarks, one live region (`useAnnounce`), named controls, `aria-current` in the nav; axe runs on the login page (pristine / with errors) and on the shell for every role. Colour contrast needs a real browser and is covered by the Playwright e2e.
 - Theme tokens (light/dark) are chosen for WCAG AA contrast pairs.
 - TypeScript is pinned to 5.x here: Next 15 needs the JS compiler API (TS 7 has none).
+
+## Screens and what is tested
+
+**Customer** — `/tickets` (own tickets, unread replies highlighted + announced), `/tickets/new`, `/tickets/[id]`.
+
+- _Create_: subject, category, priority (low/normal/high — never urgent), description, attachments (progress + cancel, 5 files, 10 MB, type checked by the server). The **draft** (and its idempotency id) lives in `localStorage` per account: it survives a reload and a failed/duplicated submit cannot create two tickets.
+- _Ticket_: conversation without internal notes, reply with attachments, **new replies appear without reload** (SSE → fetch → in-place update, announced to screen readers), "Problem solved", rating 1–5 with a comment after resolution, a reply to a closed ticket opens the new linked one.
+
+**Staff** — `/queue`, `/tickets/[id]`, `/dashboard` and `/settings` (lead).
+
+- _Queue_: filters (status, priority, category, assignee, SLA breached, tags, period, full-text, sort) **stored in the URL** (discrete changes push history so Back works, typing replaces); saved views (My open / Unassigned / SLA burning + your own); table with a live SLA countdown (one shared ticker, overdue rows highlighted); live events patch the list **in place** — untouched rows keep their DOM node, selection and the keyboard cursor survive; multi-select + bulk actions (> 200 are split) with a report of what was skipped and why (it outlives the selection); **Take next**; hotkeys `j`/`k`/`Enter`/`/`/`?` that never fire while typing.
+- _Ticket_: timeline (messages, visibly distinct internal notes, field changes), sidebar (status/priority/category/assignee/tags + SLA) with **version-conflict handling**: on 409 or a live change the user sees what changed and keeps everything they typed ("keep my edits on top" re-bases: untouched fields take the other person's value, so nothing is silently overwritten); composer with a reply/note switch that cannot be missed (different colour, label, hint, button text, warning when switching a note to a reply), per-ticket draft, templates with the customer's name and ticket number filled in, drag-and-drop attachments, `Ctrl/⌘+Enter`, "send and wait" / "send and resolve", and "Now replying: Ivan".
+- _Bell_: unread counter in the accessible name, panel with links to tickets.
+- _Lead_: statistics for a period, SLA deadlines, reply templates.
+
+Bugs the tests found while building this: the bulk report vanished when every selected ticket succeeded (the bar unmounted); a stale form value could overwrite someone else's change after "keep my edits"; the live-follow effect reverted a freshly adopted version; the help dialog called a hook after an early return; a fully loaded list never received a newly matching ticket; hotkeys died after clicking a row checkbox.

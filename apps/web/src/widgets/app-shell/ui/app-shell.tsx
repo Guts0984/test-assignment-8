@@ -6,6 +6,8 @@ import { useTranslations } from 'next-intl';
 import { LogOut } from 'lucide-react';
 import type { Me } from '@helpdesk/shared';
 import { useLogout, useMe } from '@/entities/session/api/session';
+import { LiveUpdates } from '@/features/realtime/ui/live-updates';
+import { NotificationBell } from '@/features/notifications/ui/notification-bell';
 import { LocaleSwitch } from '@/features/switch-locale/ui/locale-switch';
 import { ThemeSelect } from '@/features/toggle-theme/ui/theme-select';
 import { cn } from '@/shared/lib/cn';
@@ -13,12 +15,20 @@ import { Button } from '@/shared/ui/button';
 
 const navFor = (
   role: Me['role'],
-): Array<{ href: string; label: 'myTickets' | 'queue' | 'dashboard' }> =>
+): Array<{
+  href: string;
+  label: 'myTickets' | 'queue' | 'dashboard' | 'settings' | 'newTicket';
+}> =>
   role === 'customer'
     ? [{ href: '/tickets', label: 'myTickets' }]
     : [
         { href: '/queue', label: 'queue' },
-        ...(role === 'lead' ? ([{ href: '/dashboard', label: 'dashboard' }] as const) : []),
+        ...(role === 'lead'
+          ? ([
+              { href: '/dashboard', label: 'dashboard' },
+              { href: '/settings', label: 'settings' },
+            ] as const)
+          : []),
       ];
 
 /** Header + navigation + the `main` landmark (the target of the skip link). */
@@ -65,6 +75,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
             })}
           </nav>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {user.role !== 'customer' ? <NotificationBell /> : null}
             <LocaleSwitch />
             <ThemeSelect />
             <span className="text-sm text-muted-foreground">
@@ -83,6 +94,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           </div>
         </div>
       </header>
+      <LiveUpdates meId={user.id} role={user.role} />
       <main
         id="main"
         tabIndex={-1}

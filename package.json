@@ -9,7 +9,7 @@
     "build": "pnpm --filter @helpdesk/shared build && pnpm --filter @helpdesk/db build && pnpm --filter @helpdesk/api build",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "typecheck": "pnpm -r --if-present typecheck",
+    "typecheck": "pnpm --loglevel=info -r --if-present typecheck",
     "test": "node scripts/test-summary.mjs",
     "test:verbose": "pnpm build && pnpm -r --if-present test",
     "test:e2e": "pnpm -r --if-present test:e2e",

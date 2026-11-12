@@ -1,5 +1,5 @@
 // must be set before any module reads it: the api client's base URL (jsdom cannot fetch a relative URL)
-process.env.NEXT_PUBLIC_API_BASE = 'http://localhost/api';
+process.env.NEXT_PUBLIC_API_BASE = 'http://localhost:3000/api'; // same origin as jsdom's page, like the real /api proxy (no CORS)
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';

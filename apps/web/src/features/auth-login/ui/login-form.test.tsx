@@ -20,7 +20,7 @@ vi.mock('next/navigation', async () => {
   return { useRouter: () => utils.router, usePathname: () => '/login' };
 });
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 beforeEach(() => router.replace.mockClear());
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());

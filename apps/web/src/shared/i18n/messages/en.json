@@ -1,5 +1,7 @@
 {
-  "app": { "name": "Helpdesk" },
+  "app": {
+    "name": "Helpdesk"
+  },
   "common": {
     "loading": "Loading…",
     "logout": "Sign out",
@@ -11,13 +13,35 @@
     "skipToContent": "Skip to main content",
     "retry": "Try again",
     "close": "Close",
-    "unknown": "—"
+    "unknown": "—",
+    "save": "Save",
+    "cancel": "Cancel",
+    "remove": "Remove",
+    "edit": "Edit",
+    "back": "Back",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "none": "None",
+    "search": "Search",
+    "apply": "Apply",
+    "reset": "Reset",
+    "from": "From",
+    "to": "To",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…",
+    "noResults": "Nothing found",
+    "error": "Error",
+    "saved": "Saved",
+    "dismiss": "Dismiss"
   },
   "nav": {
     "main": "Main navigation",
     "myTickets": "My tickets",
     "queue": "Queue",
-    "dashboard": "Dashboard"
+    "dashboard": "Dashboard",
+    "newTicket": "New ticket",
+    "settings": "Settings"
   },
   "auth": {
     "title": "Sign in to support",
@@ -46,7 +70,11 @@
     "tooSmall": "At least {n, plural, one {# character} other {# characters}}",
     "invalid": "Invalid value"
   },
-  "role": { "customer": "Customer", "agent": "Agent", "lead": "Lead" },
+  "role": {
+    "customer": "Customer",
+    "agent": "Agent",
+    "lead": "Lead"
+  },
   "status": {
     "new": "New",
     "open": "Open",
@@ -54,7 +82,12 @@
     "resolved": "Resolved",
     "closed": "Closed"
   },
-  "priority": { "low": "Low", "normal": "Normal", "high": "High", "urgent": "Urgent" },
+  "priority": {
+    "low": "Low",
+    "normal": "Normal",
+    "high": "High",
+    "urgent": "Urgent"
+  },
   "category": {
     "payment": "Payment",
     "delivery": "Delivery",
@@ -70,5 +103,288 @@
   "live": {
     "newMessage": "New message in ticket {code}",
     "connectionLost": "Live updates connection lost, reconnecting…"
+  },
+  "ticket": {
+    "number": "Number",
+    "subject": "Subject",
+    "category": "Category",
+    "priority": "Priority",
+    "status": "Status",
+    "assignee": "Assignee",
+    "tags": "Tags",
+    "customer": "Customer",
+    "created": "Created",
+    "updated": "Updated",
+    "unassigned": "Unassigned",
+    "sla": "SLA",
+    "version": "Version",
+    "new": {
+      "title": "New ticket",
+      "subject": "Subject",
+      "description": "Describe the problem",
+      "attachments": "Attachments",
+      "submit": "Create ticket",
+      "submitting": "Creating…",
+      "draftRestored": "A saved draft was restored",
+      "clearDraft": "Clear draft",
+      "created": "Ticket {code} created"
+    },
+    "list": {
+      "title": "My tickets",
+      "empty": "You have no tickets yet.",
+      "createFirst": "Create your first ticket",
+      "unread": "New reply",
+      "unreadAnnounce": "There is a new reply from support"
+    },
+    "detail": {
+      "conversation": "Conversation",
+      "noMessages": "No messages yet",
+      "fromSupport": "Support",
+      "you": "You",
+      "linkedFrom": "Continues an earlier ticket",
+      "closedNote": "This ticket is closed. A new reply will open a new ticket linked to this one.",
+      "spawned": "A new ticket {code} linked to the closed one was created.",
+      "attachment": "Attachment",
+      "download": "Download"
+    },
+    "reply": {
+      "label": "Your reply",
+      "placeholder": "Write a reply…",
+      "send": "Send",
+      "sending": "Sending…",
+      "sent": "Reply sent",
+      "retryHint": "Sending failed. Trying again will not create a duplicate."
+    },
+    "solved": {
+      "button": "Problem solved",
+      "confirm": "Mark this ticket as solved?",
+      "done": "The ticket was marked as solved"
+    },
+    "rating": {
+      "title": "Rate our support",
+      "score": "Score",
+      "comment": "Comment (optional)",
+      "submit": "Send rating",
+      "thanks": "Thanks for rating: {score} out of 5",
+      "star": "{n, plural, one {# star} other {# stars}}"
+    },
+    "closed": "Ticket closed"
+  },
+  "attach": {
+    "add": "Add file",
+    "drop": "Drop files here or click to choose",
+    "uploading": "Uploading {percent}%",
+    "cancel": "Cancel upload",
+    "remove": "Remove {name}",
+    "tooMany": "At most {n, plural, one {# attachment} other {# attachments}} per message",
+    "failed": "Could not upload {name}",
+    "rejectedType": "Only images, PDF and text files are allowed",
+    "rejectedSize": "The file is larger than 10 MB",
+    "done": "{name} uploaded",
+    "size": "{kb} KB"
+  },
+  "queue": {
+    "title": "Ticket queue",
+    "takeNext": "Take next",
+    "taking": "Taking…",
+    "tookTicket": "Ticket {code} is now assigned to you",
+    "queueEmpty": "No free tickets in the queue",
+    "selected": "{count, plural, one {# ticket selected} other {# tickets selected}}",
+    "selectAll": "Select all on this page",
+    "selectRow": "Select ticket {code}",
+    "empty": "No tickets match these filters.",
+    "live": "The list updates automatically",
+    "views": {
+      "label": "Saved views",
+      "myOpen": "My open",
+      "unassigned": "Unassigned",
+      "slaBurning": "SLA burning",
+      "saveCurrent": "Save current filters…",
+      "viewName": "View name",
+      "saveView": "Save view",
+      "deleteView": "Delete view {name}",
+      "exists": "A view with this name already exists"
+    },
+    "filters": {
+      "title": "Filters",
+      "search": "Search subject and messages",
+      "assignee": "Assignee",
+      "assigneeMe": "Mine",
+      "assigneeNone": "Unassigned",
+      "assigneeAny": "Anyone",
+      "slaBreached": "SLA breached",
+      "slaYes": "Yes",
+      "slaNo": "No",
+      "slaAny": "Any",
+      "tags": "Tags (comma-separated)",
+      "period": "Created between",
+      "sort": "Sort by",
+      "sortSla": "SLA deadline",
+      "sortCreated": "Created date",
+      "sortUpdated": "Updated date",
+      "order": "Order",
+      "asc": "Oldest first",
+      "desc": "Newest first",
+      "clear": "Clear all filters"
+    },
+    "columns": {
+      "sla": "SLA",
+      "customer": "Customer"
+    },
+    "sla": {
+      "overdue": "overdue by {text}",
+      "left": "{text} left",
+      "none": "—",
+      "paused": "paused",
+      "dhm": "{days}d {hours}h {mins}m",
+      "hm": "{hours}h {mins}m",
+      "m": "{mins}m"
+    },
+    "bulk": {
+      "title": "Bulk actions",
+      "assign": "Assign",
+      "status": "Change status",
+      "priority": "Change priority",
+      "tags": "Tags",
+      "addTags": "Add tags",
+      "removeTags": "Remove tags",
+      "apply": "Apply to selected",
+      "running": "Applying…",
+      "report": "Result: applied to {ok}, skipped {skipped}",
+      "skippedTitle": "Skipped tickets",
+      "reason": {
+        "not_found_or_forbidden": "no access or does not exist",
+        "invalid_transition": "status change not allowed",
+        "closed": "the ticket is closed",
+        "unchanged": "nothing to change",
+        "assignee_not_eligible": "the assignee is not eligible"
+      },
+      "chooseAction": "Choose an action",
+      "chooseValue": "Choose a value",
+      "clearSelection": "Clear selection"
+    },
+    "hotkeys": {
+      "title": "Keyboard shortcuts",
+      "next": "Next ticket",
+      "prev": "Previous ticket",
+      "open": "Open the highlighted ticket",
+      "search": "Jump to search",
+      "help": "Show this help",
+      "hint": "Press ? for keyboard shortcuts",
+      "send": "Send reply"
+    }
+  },
+  "staff": {
+    "sidebar": {
+      "title": "Ticket details",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "saved": "Changes saved",
+      "conflictTitle": "Someone else has changed this ticket",
+      "conflictBody": "The current values are shown below. Your unsaved edits are kept in the form — review them and save again.",
+      "applyCurrent": "Show current values",
+      "current": "Current on the server",
+      "yourEdit": "Your edit",
+      "slaFirst": "First response due",
+      "slaResolution": "Resolution due",
+      "slaPaused": "SLA clock paused (waiting for the customer)",
+      "slaBreached": "SLA breached",
+      "firstResponded": "First response given",
+      "categoryLeadOnly": "Only a lead changes the category",
+      "history": "Change history",
+      "none": "—",
+      "keepMine": "Keep my edits on top of the current version"
+    },
+    "events": {
+      "created": "Ticket created",
+      "status": "Status: {from} → {to}",
+      "priority": "Priority: {from} → {to}",
+      "assignee": "Assignee changed",
+      "category": "Category: {from} → {to}",
+      "tags": "Tags: {to}",
+      "by": "{name}",
+      "system": "System",
+      "assigned": "Assigned to {name}",
+      "unassignedTo": "Unassigned"
+    },
+    "composer": {
+      "modeReply": "Reply to customer",
+      "modeNote": "Internal note",
+      "modeLabel": "Message mode",
+      "replyHint": "The customer will see this",
+      "noteHint": "The customer will NOT see this",
+      "placeholderReply": "Write a reply to the customer…",
+      "placeholderNote": "Note for colleagues (hidden from the customer)…",
+      "send": "Send reply",
+      "sendNote": "Save note",
+      "sendAndWait": "Send and wait for customer",
+      "sendAndResolve": "Send and resolve",
+      "sending": "Sending…",
+      "templates": "Templates",
+      "insertTemplate": "Insert template",
+      "noTemplates": "No templates",
+      "draftSaved": "Draft saved",
+      "shortcut": "Ctrl/⌘ + Enter to send",
+      "confirmNoteToReply": "You switched to a reply. The customer will see this text.",
+      "dropHere": "Drop to add files"
+    },
+    "presence": {
+      "one": "Now replying: {names}",
+      "many": "Now replying: {names}"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "bell": "{count, plural, one {# unread notification} other {# unread notifications}}",
+      "none": "No notifications",
+      "markAll": "Mark all as read",
+      "assigned": "Ticket {code} was assigned to you",
+      "customer_replied": "The customer replied in {code}",
+      "sla_warning": "SLA is about to be breached in {code}",
+      "sla_breached": "SLA breached in {code}",
+      "new": "New notification: {text}"
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "period": "Period",
+      "from": "From",
+      "to": "To",
+      "refresh": "Refresh",
+      "created": "Tickets created",
+      "resolved": "Resolved",
+      "avgFirst": "Average first response time",
+      "avgResolution": "Average resolution time",
+      "breach": "SLA breaches",
+      "avgRating": "Average rating",
+      "ratings": "{count, plural, one {# rating} other {# ratings}}",
+      "workload": "Workload by agent",
+      "agent": "Agent",
+      "active": "Active",
+      "resolvedPeriod": "Resolved in period",
+      "breachedCol": "With SLA breach",
+      "noData": "No data for this period",
+      "duration": {
+        "d": "{n} d",
+        "h": "{n} h",
+        "m": "{n} min",
+        "s": "{n} s"
+      }
+    },
+    "settings": {
+      "title": "Settings",
+      "sla": "SLA deadlines",
+      "slaHelp": "Applies to new tickets and to tickets whose priority changes. Business hours: Mon–Fri 9:00–18:00 Kyiv time.",
+      "firstResponse": "First response (min)",
+      "resolution": "Resolution (min)",
+      "businessHours": "Business hours only",
+      "saved": "SLA deadlines saved",
+      "templates": "Reply templates",
+      "templatesHelp": "Placeholders: '{{'customer_name'}}', '{{'ticket_number'}}'",
+      "templateTitle": "Title",
+      "templateBody": "Text",
+      "templateCategory": "Category (optional)",
+      "add": "Add template",
+      "anyCategory": "Any",
+      "deleteConfirm": "Delete the template “{title}”?"
+    }
   }
 }

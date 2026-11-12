@@ -21,18 +21,29 @@ import {
 
 vi.mock('next/navigation', async () => {
   const utils = await import('./utils');
-  return { useRouter: () => utils.router, usePathname: () => '/queue' };
+  return {
+    useRouter: () => utils.router,
+    usePathname: () => '/queue',
+    useSearchParams: () => new URLSearchParams(),
+  };
 });
 vi.mock('next-themes', () => ({
   useTheme: () => ({ theme: 'system', setTheme: vi.fn() }),
   ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 /** axe-core in jsdom: structure, names, roles, ARIA, labels. (Colour contrast needs a real browser: the Playwright e2e covers it.) */
+/** What the queue page (inside the shell) asks the api for. */
+const queueApi = () => [
+  http.get(`${API}/notifications`, () => HttpResponse.json({ items: [], unreadCount: 0 })),
+  http.get(`${API}/tickets`, () => HttpResponse.json({ items: [], nextCursor: null })),
+  http.get(`${API}/saved-views`, () => HttpResponse.json([])),
+];
+
 const audit = async (container: Element) => {
   const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
   return results.violations.map(
@@ -63,7 +74,10 @@ describe.each([['uk' as const], ['en' as const]])('accessibility (%s)', (locale)
 
   it('the signed-in shell (landmarks, nav, header controls, main) has no violations for every role', async () => {
     for (const user of [ME, CUSTOMER, { ...ME, role: 'lead' as const }]) {
-      server.use(http.get(`${API}/me`, () => HttpResponse.json(user)));
+      server.use(
+        http.get(`${API}/me`, () => HttpResponse.json(user)),
+        ...queueApi(),
+      );
       const { container, unmount } = renderApp(
         <AppShell>
           <QueuePage />
@@ -71,15 +85,18 @@ describe.each([['uk' as const], ['en' as const]])('accessibility (%s)', (locale)
         { locale },
       );
       await screen.findByRole('main');
-      expect(screen.getByRole('navigation')).toHaveAccessibleName();
-      expect(screen.getAllByRole('combobox').every((c) => c.getAttribute('aria-label'))).toBe(true); // language + theme pickers are named
+      for (const nav of screen.getAllByRole('navigation')) expect(nav).toHaveAccessibleName(); // several landmarks of one kind must be distinguishable
+      for (const box of screen.getAllByRole('combobox')) expect(box).toHaveAccessibleName(); // every select is named (label or aria-label)
       expect(await audit(container), user.role).toEqual([]);
       unmount();
     }
   });
 
   it('exactly one <h1> per page and the main landmark is the skip-link target', async () => {
-    server.use(http.get(`${API}/me`, () => HttpResponse.json(ME)));
+    server.use(
+      http.get(`${API}/me`, () => HttpResponse.json(ME)),
+      ...queueApi(),
+    );
     renderApp(
       <AppShell>
         <QueuePage />
@@ -124,7 +141,7 @@ describe('keyboard and screen-reader support', () => {
     );
     await screen.findByRole('main');
     const order: string[] = [];
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       await user.tab();
       order.push(
         document.activeElement?.getAttribute('aria-label') ??
@@ -132,7 +149,13 @@ describe('keyboard and screen-reader support', () => {
           '',
       );
     }
-    expect(order).toEqual(['Queue', 'Language', 'Theme', 'Sign out']); // navigation, then the header controls, in reading order
+    expect(order).toEqual([
+      'Queue',
+      expect.stringContaining('Notifications'),
+      'Language',
+      'Theme',
+      'Sign out',
+    ]); // navigation, then the header controls, in reading order
     await user.keyboard('{Enter}');
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/login'));
   });

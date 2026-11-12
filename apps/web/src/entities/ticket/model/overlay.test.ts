@@ -85,6 +85,16 @@ describe('overlayTicket: live events on a list that is on screen', () => {
     expect(overlayTicket(list, ticket(0), openOnly)).toBe(list);
   });
 
+  it('on a COMPLETE list a ticket that sorts last is appended (there is no later page to deliver it)', () => {
+    expect(
+      overlayTicket(list, ticket(0), { ...openOnly, complete: true }).map((t) => t.id),
+    ).toEqual([id(5), id(3), id(1), id(0)]);
+    expect(overlayTicket([], ticket(7), { ...openOnly, complete: true }).map((t) => t.id)).toEqual([
+      id(7),
+    ]);
+    expect(overlayTicket([], ticket(7), openOnly)).toEqual([]); // incomplete: not appended
+  });
+
   it('respects ascending order and the SLA key with NULLs last, ties broken by id', () => {
     const asc: OverlayOptions = { matches: () => true, sort: 'sla', order: 'asc' };
     const a = ticket(1, { sla: { dueAt: '2026-11-20T10:00:00Z' } as TicketDto['sla'] });

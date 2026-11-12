@@ -11,7 +11,7 @@ import type { AppLocale } from '@/shared/i18n/config';
 import { AnnouncerProvider } from '@/shared/ui/announcer';
 
 export const MESSAGES = { uk, en } as const;
-export const API = 'http://localhost/api';
+export const API = 'http://localhost:3000/api';
 
 export const router = {
   replace: vi.fn(),

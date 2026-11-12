@@ -11,6 +11,9 @@ type EventSourceLike = {
 };
 export type EventSourceFactory = (url: string) => EventSourceLike;
 
+const browserEventSource: EventSourceFactory = (u) =>
+  new EventSource(u, { withCredentials: true }) as unknown as EventSourceLike;
+
 const EVENT_TYPES = [
   'ticket.created',
   'ticket.changed',
@@ -30,9 +33,13 @@ export const connectEventStream = (
     onEvent: (e: SseEvent, id: string | null) => void;
     onStatus?: (s: StreamStatus) => void;
   },
-  factory: EventSourceFactory = (u) =>
-    new EventSource(u, { withCredentials: true }) as unknown as EventSourceLike,
+  factory: EventSourceFactory = browserEventSource,
 ): (() => void) => {
+  // no EventSource (very old browser, test environment): the app works without live updates, it just does not push
+  if (factory === browserEventSource && typeof EventSource === 'undefined') {
+    handlers.onStatus?.('closed');
+    return () => undefined;
+  }
   handlers.onStatus?.('connecting');
   const source = factory(url);
   const CLOSED = 2;
