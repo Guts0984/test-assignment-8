@@ -12,6 +12,7 @@ export const ERROR_CODES = [
   'unsupported_media_type',
   'bad_request',
   'invalid_transition',
+  'service_unavailable',
   'internal_error',
 ] as const;
 export const errorCodeSchema = z.enum(ERROR_CODES);

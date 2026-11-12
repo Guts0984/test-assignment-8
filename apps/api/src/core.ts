@@ -1,0 +1,40 @@
+import { Global, Module, type DynamicModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import type { DbHandle } from '@helpdesk/db';
+import type { Env } from './env';
+import type { AppState } from './http/types';
+import { AllExceptionsFilter } from './http/exceptions.filter';
+import type { Limiter } from './lib/limiter';
+import type { Logger } from './lib/logger';
+import { TOKENS } from './tokens';
+import { createSemaphore } from './lib/semaphore';
+import { AuthGuard } from './auth/auth.guard';
+import { AuthController } from './auth/auth.controller';
+import { HealthController } from './health/health.controller';
+
+export type AppDeps = { env: Env; db: DbHandle; limiter: Limiter; logger: Logger; state: AppState };
+
+@Global()
+@Module({})
+export class CoreModule {
+  static register(deps: AppDeps): DynamicModule {
+    return {
+      module: CoreModule,
+      controllers: [HealthController, AuthController],
+      providers: [
+        { provide: TOKENS.ENV, useValue: deps.env },
+        { provide: TOKENS.DB, useValue: deps.db },
+        { provide: TOKENS.LIMITER, useValue: deps.limiter },
+        { provide: TOKENS.LOGGER, useValue: deps.logger },
+        { provide: TOKENS.STATE, useValue: deps.state },
+        {
+          provide: TOKENS.LOGIN_GATE,
+          useValue: createSemaphore(deps.env.LOGIN_MAX_CONCURRENCY, deps.env.LOGIN_QUEUE_MAX),
+        },
+        { provide: APP_GUARD, useClass: AuthGuard },
+        { provide: APP_FILTER, useValue: new AllExceptionsFilter(deps.logger) },
+      ],
+      exports: [TOKENS.ENV, TOKENS.DB, TOKENS.LIMITER, TOKENS.LOGGER, TOKENS.STATE],
+    };
+  }
+}

@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm --filter @helpdesk/shared build && pnpm --filter @helpdesk/db build",
+    "build": "pnpm --filter @helpdesk/shared build && pnpm --filter @helpdesk/db build && pnpm --filter @helpdesk/api build",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "pnpm -r --if-present typecheck",

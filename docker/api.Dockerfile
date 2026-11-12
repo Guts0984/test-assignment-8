@@ -6,17 +6,21 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
-RUN pnpm install --frozen-lockfile --filter @helpdesk/db...
+COPY apps/api/package.json apps/api/
+RUN pnpm install --frozen-lockfile --filter @helpdesk/api...
 COPY packages/shared packages/shared
 COPY packages/db packages/db
-RUN pnpm --filter @helpdesk/shared build && pnpm --filter @helpdesk/db build \
- && pnpm --filter @helpdesk/db deploy --prod /out
+COPY apps/api apps/api
+RUN pnpm --filter @helpdesk/shared build \
+ && pnpm --filter @helpdesk/db build \
+ && pnpm --filter @helpdesk/api build \
+ && pnpm --filter @helpdesk/api deploy --prod /out
 
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-# /out = the db package + its production dependencies only (incl. built @helpdesk/shared)
+# /out = the api + its production dependencies only (incl. the built @helpdesk/shared and @helpdesk/db)
 COPY --from=build --chown=node:node /out ./
 USER node
-# Applies migrations and seeds an empty database; exits 0 when done (or when already seeded).
-CMD ["node", "dist/cli.js", "setup"]
+EXPOSE 3001
+CMD ["node", "dist/main.js"]

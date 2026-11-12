@@ -1,6 +1,5 @@
-# Database block for now: PostgreSQL + a one-shot container that applies migrations and seeds demo data.
-#   docker compose up --build
-# Block 8 extends this same file with `api` and `web` (the api then migrates/seeds on boot).
+# Cold start:  cp .env.example .env && docker compose up --build
+# (Block 8 adds the `web` service. The api applies migrations and seeds demo data on boot.)
 services:
   postgres:
     image: postgres:16-alpine
@@ -18,18 +17,36 @@ services:
       timeout: 3s
       retries: 20
 
-  db-setup:
+  api:
     build:
       context: .
-      dockerfile: docker/db.Dockerfile
+      dockerfile: docker/api.Dockerfile
+    env_file: .env
     environment:
+      # inside the compose network the database is `postgres:5432`, not localhost
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      SEED_TICKETS: ${SEED_TICKETS:-20000}
-      SEED_CUSTOMERS: ${SEED_CUSTOMERS:-200}
+      NODE_ENV: production
+      PORT: 3001
+      # a plain-http local run: browsers drop Secure cookies on http://localhost in some setups
+      COOKIE_SECURE: 'false'
+    ports:
+      - '127.0.0.1:${PORT:-3001}:3001'
     depends_on:
       postgres:
         condition: service_healthy
-    restart: 'no'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 90s
+    stop_grace_period: 15s
 
 volumes:
   pgdata:

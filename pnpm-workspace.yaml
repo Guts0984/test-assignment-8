@@ -4,6 +4,7 @@ packages:
 
 # pnpm blocks dependency install scripts by default; esbuild (tsup/vite/drizzle-kit) needs its postinstall.
 allowBuilds:
+  '@scarf/scarf': false # analytics postinstall of swagger-ui deps: not allowed
   esbuild: true
 
 # No pnpm banner/progress: `pnpm test` prints exactly one summary line. Errors are still shown.

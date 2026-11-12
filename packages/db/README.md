@@ -8,21 +8,21 @@ system assumes about PostgreSQL is enforced and tested **here**, so a failure in
 
 ```bash
 cp .env.example .env
-docker compose up --build   # postgres + one-shot migrate+seed (≈30 s)
+docker compose up -d postgres && pnpm db:migrate && pnpm db:seed   # ≈30 s for the 20 000-ticket seed
 pnpm test                                             # one summary line; needs postgres from `pnpm db:up`
 ```
 
 ## Layout
 
-| Path               | What                                                                                   |
-| ------------------ | -------------------------------------------------------------------------------------- | ---- | ----------------------- |
-| `src/schema/`      | tables, enums, indexes, CHECK constraints (single source of truth)                     |
-| `drizzle/`         | generated SQL migrations (committed; CI fails on drift: `pnpm db:check-drift`)         |
-| `src/migrate.ts`   | `migrate()` under a PG advisory lock (safe with several api replicas) + reference data |
-| `src/reference.ts` | categories, default SLA policies, ticket counter, `allocateTicketNumber()`             |
-| `src/seed/`        | deterministic seed (200 customers, 6 agents, 1 lead, 20 000 tickets / 6 months)        |
-| `src/testing.ts`   | `createTestDb()` — a fresh, migrated, randomly named database per test file            |
-| `src/cli.ts`       | `helpdesk-db migrate                                                                   | seed | setup` (used by Docker) |
+| Path               | What                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `src/schema/`      | tables, enums, indexes, CHECK constraints (single source of truth)                            |
+| `drizzle/`         | generated SQL migrations (committed; CI fails on drift: `pnpm db:check-drift`)                |
+| `src/migrate.ts`   | `migrate()` under a PG advisory lock (safe with several api replicas) + reference data        |
+| `src/reference.ts` | categories, default SLA policies, ticket counter, `allocateTicketNumber()`                    |
+| `src/seed/`        | deterministic seed (200 customers, 6 agents, 1 lead, 20 000 tickets / 6 months)               |
+| `src/testing.ts`   | `createTestDb()` — a fresh, migrated, randomly named database per test file                   |
+| `src/cli.ts`       | `helpdesk-db` commands: migrate, seed, setup, reset (the api also migrates and seeds on boot) |
 
 ## Seed credentials
 
