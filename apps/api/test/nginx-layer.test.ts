@@ -198,7 +198,7 @@ describe.skipIf(!dockerOk)('nginx layer (real config, real api, separate client 
     expect(Number(victim.headers['ratelimit-remaining'])).toBe(19);
   });
 
-  it('login protection works per device through nginx: an attacker is locked out, the victim on another device logs in', async () => {
+  it("login protection works per device through nginx: the attacker is throttled, the victim on another device (and even one sharing the attacker's address) logs in", async () => {
     const { front } = await stack({ RATE_LIMIT_API_PER_MIN: '100000' });
     for (let i = 0; i < 5; i += 1)
       expect(
@@ -208,8 +208,10 @@ describe.skipIf(!dockerOk)('nginx layer (real config, real api, separate client 
           })
         ).status,
       ).toBe(401);
+    // past the soft limit a WRONG guess from that device is throttled; the right password is not locked out
+    expect((await viaLogin(front, u.customer.email, 'wrong-6', '127.0.0.8')).status).toBe(429);
     expect((await viaLogin(front, u.customer.email, PASSWORDS.customer, '127.0.0.8')).status).toBe(
-      429,
+      200,
     );
     expect((await viaLogin(front, u.customer.email, PASSWORDS.customer, '127.0.0.9')).status).toBe(
       200,
