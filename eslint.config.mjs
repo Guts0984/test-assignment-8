@@ -32,6 +32,11 @@ export default tseslint.config(
     },
   },
   {
+    // Plain Node scripts (CI/test tooling).
+    files: ['scripts/**/*.mjs', '*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
+  {
     // NestJS is class-based by design.
     files: ['apps/api/**/*.ts'],
     rules: { 'no-restricted-syntax': 'off' },

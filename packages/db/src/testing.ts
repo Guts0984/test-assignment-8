@@ -4,7 +4,7 @@ import { createDb, type DbHandle } from './client';
 import { migrate } from './migrate';
 
 /**
- * Admin connection (can CREATE DATABASE). In docker-compose.db.yml this is the `postgres` service
+ * Admin connection (can CREATE DATABASE). In docker-compose.yml this is the `postgres` service
  * published on localhost.
  */
 export const adminUrl = (): string =>

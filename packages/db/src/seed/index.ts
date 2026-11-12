@@ -29,7 +29,8 @@ const chunks = <T>(items: readonly T[], size: number): T[][] => {
 const argon2Hash = (plain: string) => hash(plain);
 
 export type SeedResult =
-  { skipped: true } | { skipped: false; tickets: number; messages: number; users: number };
+  | { skipped: true }
+  | { skipped: false; tickets: number; messages: number; users: number };
 
 /**
  * Fills an empty database with demo data in ONE transaction (all or nothing), so an interrupted

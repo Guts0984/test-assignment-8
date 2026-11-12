@@ -35,6 +35,10 @@
     "@node-rs/argon2": "^2.2.2",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1",
-    "@helpdesk/shared": "*"
-  }
+    "@helpdesk/shared": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "drizzle"
+  ]
 }

@@ -2,32 +2,33 @@
   "name": "helpdesk",
   "private": true,
   "version": "0.0.0",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "build": "npm run build -w @helpdesk/shared && npm run build -w @helpdesk/db",
+    "build": "pnpm --filter @helpdesk/shared build && pnpm --filter @helpdesk/db build",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run build && npm run test --workspaces --if-present",
-    "test:e2e": "npm run test:e2e --workspaces --if-present",
-    "db:up": "docker compose -f docker-compose.db.yml up -d postgres",
-    "db:down": "docker compose -f docker-compose.db.yml down",
-    "db:check-drift": "npm run generate -w @helpdesk/db && git diff --exit-code -- packages/db/drizzle"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "node scripts/test-summary.mjs",
+    "test:verbose": "pnpm build && pnpm -r --if-present test",
+    "test:e2e": "pnpm -r --if-present test:e2e",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @helpdesk/db db:migrate",
+    "db:seed": "pnpm --filter @helpdesk/db db:seed",
+    "db:reset": "pnpm --filter @helpdesk/db db:reset",
+    "db:check-drift": "pnpm --filter @helpdesk/db generate && git diff --exit-code -- packages/db/drizzle"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.5",
     "eslint": "^10.14.0",
-    "prettier": "^3.10.1",
+    "prettier": "3.6.2",
     "tsup": "^9.0.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.2",
     "vitest": "^5.1.0"
-  }
+  },
+  "packageManager": "pnpm@12.6.0"
 }

@@ -19,13 +19,14 @@ jobs:
       TEST_ADMIN_DATABASE_URL: postgres://helpdesk:helpdesk_ci_password@localhost:5440/postgres
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - run: npm run build
-      - run: npm run lint
-      - run: npm run typecheck
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm --loglevel=info install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm typecheck
       # schema.ts and the committed migrations must not drift apart
-      - run: npm run db:check-drift
-      - run: npm test
+      - run: pnpm db:check-drift
+      - run: pnpm test
   # Later blocks add: api integration + hostile-client suite, web unit, e2e on the compose stack.

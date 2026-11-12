@@ -1,24 +1,22 @@
 # syntax=docker/dockerfile:1
 FROM node:22-bookworm-slim AS build
+ARG PNPM_VERSION=12.6.0
+RUN npm install -g pnpm@${PNPM_VERSION}
 WORKDIR /repo
-COPY package.json package-lock.json tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
-RUN npm ci --workspace=@helpdesk/shared --workspace=@helpdesk/db --include-workspace-root
+RUN pnpm install --frozen-lockfile --filter @helpdesk/db...
 COPY packages/shared packages/shared
 COPY packages/db packages/db
-RUN npm run build -w @helpdesk/shared && npm run build -w @helpdesk/db \
- && npm prune --omit=dev --workspace=@helpdesk/shared --workspace=@helpdesk/db --include-workspace-root
+RUN pnpm --filter @helpdesk/shared build && pnpm --filter @helpdesk/db build \
+ && pnpm --filter @helpdesk/db deploy --prod /out
 
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
-WORKDIR /repo
-COPY --from=build --chown=node:node /repo/node_modules node_modules
-COPY --from=build --chown=node:node /repo/packages/shared/package.json packages/shared/package.json
-COPY --from=build --chown=node:node /repo/packages/shared/dist packages/shared/dist
-COPY --from=build --chown=node:node /repo/packages/db/package.json packages/db/package.json
-COPY --from=build --chown=node:node /repo/packages/db/dist packages/db/dist
-COPY --from=build --chown=node:node /repo/packages/db/drizzle packages/db/drizzle
+WORKDIR /app
+# /out = the db package + its production dependencies only (incl. built @helpdesk/shared)
+COPY --from=build --chown=node:node /out ./
 USER node
 # Applies migrations and seeds an empty database; exits 0 when done (or when already seeded).
-CMD ["node", "packages/db/dist/cli.js", "setup"]
+CMD ["node", "dist/cli.js", "setup"]

@@ -1,6 +1,6 @@
-# Database block in isolation:  docker compose -f docker-compose.db.yml up --build
-# Starts PostgreSQL, then a one-shot container that applies migrations and seeds demo data.
-# (The full stack lives in docker-compose.yml.)
+# Database block for now: PostgreSQL + a one-shot container that applies migrations and seeds demo data.
+#   docker compose up --build
+# Block 8 extends this same file with `api` and `web` (the api then migrates/seeds on boot).
 services:
   postgres:
     image: postgres:16-alpine
@@ -24,6 +24,8 @@ services:
       dockerfile: docker/db.Dockerfile
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      SEED_TICKETS: ${SEED_TICKETS:-20000}
+      SEED_CUSTOMERS: ${SEED_CUSTOMERS:-200}
     depends_on:
       postgres:
         condition: service_healthy
