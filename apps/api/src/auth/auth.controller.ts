@@ -3,7 +3,7 @@ import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { DbHandle } from '@helpdesk/db';
 import { loginSchema, type LoginInput as LoginBody, type Me } from '@helpdesk/shared';
 import type { Request, Response } from 'express';
-import { z } from 'zod';
+import { jsonSchemaOf } from '../http/swagger';
 import { TOKENS } from '../tokens';
 import type { Env } from '../env';
 import { ZodPipe } from '../http/zod.pipe';
@@ -13,9 +13,6 @@ import { deleteSessionByToken, findSession } from '../lib/sessions';
 import type { createSemaphore } from '../lib/semaphore';
 import { Public } from './decorators';
 import { login } from './login';
-
-const bodySchema = (schema: z.ZodType) =>
-  z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
 
 @ApiTags('auth')
 @Controller()
@@ -31,7 +28,7 @@ export class AuthController {
   @Post('auth/login')
   @HttpCode(200)
   @ApiOperation({ summary: 'Log in; sets an httpOnly session cookie' })
-  @ApiBody({ schema: bodySchema(loginSchema) })
+  @ApiBody({ schema: jsonSchemaOf(loginSchema) })
   async login(
     @Body(new ZodPipe(loginSchema)) body: LoginBody,
     @Req() req: Request,

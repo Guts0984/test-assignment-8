@@ -4,3 +4,6 @@ export * from './errors';
 export * from './transitions';
 export * from './schemas';
 export * from './sla';
+export * from './dto';
+export * from './events';
+export * from './template';

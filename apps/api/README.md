@@ -53,3 +53,77 @@ two pools), `hostile-input` (68 malformed-body cases + 22 raw-TCP cases + deny-b
 `attack` (flooding, brute force, stuffing, spraying, spoofed headers, trusted proxy, slowloris, slow body,
 connection floods, distributed login floods — each asserts the attacker is stopped **and** innocents are not),
 `csrf-cors`, `lifecycle` (SIGTERM mid-request, database loss, startup validation).
+
+---
+
+# Tickets domain (block 4)
+
+Routes: `POST/GET /tickets`, `GET/PATCH /tickets/:id`, `POST /tickets/:id/messages`, `POST /tickets/:id/read|rating`,
+`POST /tickets/take-next`, `POST /tickets/bulk`, `GET/POST/PUT/DELETE /canned-responses`, `GET/POST/DELETE /saved-views`,
+`GET/PUT /sla`, `GET /agents`. (Attachments, SSE, notifications list, stats and background jobs: block 5.)
+
+## Status rules
+
+| From → To                             | Who / how                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `new`/`pending` → `open`              | staff **public** reply (automatic)                                                                     |
+| `pending`/`resolved` → `open`         | **customer** reply (automatic)                                                                         |
+| `new`, `open`, `pending` → `resolved` | staff by hand or with "send and resolve"; **customer** ("problem solved")                              |
+| `new`, `open` → `pending`             | staff by hand or "send and wait"                                                                       |
+| `pending` → `open`                    | staff by hand                                                                                          |
+| `resolved` → `open`                   | staff by hand (reopen)                                                                                 |
+| `resolved` → `closed`                 | staff by hand, or **automatically after 3 days without a customer reply** (job, block 5)               |
+| `closed` → anything                   | **never**: a customer reply creates a **new ticket linked to the old one**; staff cannot reply or edit |
+| anything → `new`, self-transitions    | not allowed (a self-"change" is a no-op: no version bump, no history)                                  |
+
+The table lives in `packages/shared` (`transitions.ts`) and is tested for every pair and role. Internal notes never change status
+and never count as a first response. A reply with `setStatus` is validated against the status _after_ the automatic effect
+(`new` + reply + `pending` = one net change `new → pending`).
+
+## Who sees and changes what
+
+|                         | customer                                    | agent                                                    | lead                                         |
+| ----------------------- | ------------------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
+| sees                    | own tickets                                 | tickets of own categories **or assigned to them**        | all                                          |
+| internal notes          | never (filtered **in SQL**, also in search) | yes                                                      | yes                                          |
+| SLA data, tags, history | no                                          | yes                                                      | yes                                          |
+| change                  | only → `resolved`                           | status, priority, tags; take a free ticket / release own | everything; assignee must be an active agent |
+| category                | —                                           | no (lead only)                                           | yes                                          |
+
+A ticket the caller may not see is answered `404`, identical to a non-existent id (no existence oracle).
+
+## Concurrency
+
+- **Version**: `PATCH` carries the version it saw. The row is locked (`FOR UPDATE`) and compared; mismatch → `409 version_conflict` with the _current_ ticket
+  in `error.current`. Nothing is overwritten silently. Only real changes bump the version (a chat message does not, so sidebar edits aren't disturbed).
+- **Idempotent replies**: the client generates the message id; `UNIQUE (author, client_id)` plus the ticket row lock make a repeat (double click, retry)
+  return the original message (`200`, `replayed: true`). Same id with different content or on another ticket → `409`. Ticket creation works the same way.
+- **Ticket numbers**: counter row incremented inside the creating transaction (gap-free; a failed creation burns nothing).
+- **Take next**: `ORDER BY priority DESC, sla_due_at ASC … FOR UPDATE SKIP LOCKED LIMIT 1` — simultaneous callers lock _different_ rows and never wait for each other
+  (tested by holding the top row in another transaction).
+- **Bulk**: ≤ 200 ids, each ticket in its own transaction; the answer lists every id as applied or skipped with a reason
+  (`not_found_or_forbidden`, `invalid_transition`, `closed`, `unchanged`, `assignee_not_eligible`). Bulk ignores optimistic versions (documented).
+
+## SLA
+
+Deadlines are computed at creation from `sla_policies` (editable by the lead; applies to new tickets and priority changes). Business time = Mon–Fri 09:00–18:00 Europe/Kyiv, DST-aware, no public holidays.
+`urgent` is wall-clock (1 h / 4 h). `high` 4 h / 1 business day (540 min), `normal` 1 / 3 business days, `low` 2 / 5.
+
+- `pending` **pauses** the clock: the remaining minutes of each open deadline are stored; leaving `pending` restarts them (`now + remaining`, in business time where the policy says so).
+- A **priority change** recomputes both deadlines **from the moment of creation** and re-derives the warned/breached marks.
+- **Reopening** a resolved ticket grants a fresh resolution window (never shorter than what was left) and clears the old resolution breach.
+- The planners are pure functions (`src/tickets/sla-plan.ts`) with fixed-date unit tests (Friday 17:00 `high`, a week in `pending`, weekends, DST…).
+
+## Search & pagination
+
+`GET /tickets`: filters (status, priority, category, assignee = `me`/`none`/id, `slaBreached`, tags (all of), period), `q` (PostgreSQL full-text, `simple` config, over subject **and** messages — customers only match public messages),
+sort by SLA deadline / created / updated, **keyset cursor** `(sort key, id)`; the cursor is bound to its sort/order and validated (tampered → `400`).
+Over 20 000 seeded tickets the test suite asserts p95 < 200 ms and worst < 400 ms across lists, searches and 150-page-deep cursors, for every role.
+
+## Decisions & limitations
+
+- Timestamps that feed cursors are written from JavaScript (millisecond precision); a test asserts no row has sub-millisecond precision.
+- Customers cannot create `urgent`; when a customer reopens a closed ticket whose priority is `urgent`, the new ticket is `high`.
+- Agents cannot change the category (a moved ticket could vanish from their view); the lead re-routes.
+- Changing SLA policies does not retro-fit existing tickets.
+- Tag filter is AND (`tags=a,b` = both).

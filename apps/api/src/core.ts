@@ -11,6 +11,13 @@ import { createSemaphore } from './lib/semaphore';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthController } from './auth/auth.controller';
 import { HealthController } from './health/health.controller';
+import { TicketsController } from './tickets/tickets.controller';
+import {
+  AgentsController,
+  CannedController,
+  SavedViewsController,
+  SlaController,
+} from './tickets/staff.controller';
 
 export type AppDeps = { env: Env; db: DbHandle; limiter: Limiter; logger: Logger; state: AppState };
 
@@ -20,7 +27,15 @@ export class CoreModule {
   static register(deps: AppDeps): DynamicModule {
     return {
       module: CoreModule,
-      controllers: [HealthController, AuthController],
+      controllers: [
+        HealthController,
+        AuthController,
+        TicketsController,
+        CannedController,
+        SavedViewsController,
+        SlaController,
+        AgentsController,
+      ],
       providers: [
         { provide: TOKENS.ENV, useValue: deps.env },
         { provide: TOKENS.DB, useValue: deps.db },

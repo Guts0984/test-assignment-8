@@ -276,3 +276,112 @@ export const pool = async <T>(
   );
   return out;
 };
+
+/* ---------------------------------------------------------------- domain helpers */
+
+export type Session = { cookie: string; user: { id: string; email: string; role: string } };
+
+export const signIn = async (
+  api: Pick<Api, 'port'>,
+  email: string,
+  password: string,
+  from?: string,
+): Promise<Session> => {
+  const r = await login(api, email, password, from);
+  if (r.status !== 200) throw new Error(`login failed for ${email}: ${r.status} ${r.text}`);
+  return { cookie: sessionCookie(r)!, user: (r.json as { user: Session['user'] }).user };
+};
+
+/** `as(session).get('/tickets')` — authenticated calls with a terse API. */
+export const as = (api: Pick<Api, 'port'>, s: Session, from?: string) => {
+  const call = (method: string, path: string, body?: object, headers?: Record<string, string>) =>
+    request(api, {
+      method,
+      path,
+      cookie: s.cookie,
+      ...(body !== undefined ? { body } : {}),
+      ...(headers ? { headers } : {}),
+      ...(from ? { from } : {}),
+    });
+  return {
+    get: (path: string) => call('GET', path),
+    post: (path: string, body: object = {}) => call('POST', path, body),
+    patch: (path: string, body: object) => call('PATCH', path, body),
+    put: (path: string, body: object) => call('PUT', path, body),
+    del: (path: string) => call('DELETE', path),
+    delete: (path: string) => call('DELETE', path),
+  };
+};
+
+export type TicketJson = {
+  id: string;
+  number: number;
+  code: string;
+  subject: string;
+  category: string;
+  priority: string;
+  status: string;
+  customer: { id: string; name: string };
+  assignee: { id: string; name: string } | null;
+  tags: string[];
+  version: number;
+  linkedTicketId: string | null;
+  unread: boolean;
+  sla: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const newTicketBody = (over: Record<string, unknown> = {}) => ({
+  subject: 'Cannot pay by card',
+  category: 'payment',
+  priority: 'normal',
+  body: 'Payment fails at checkout',
+  attachmentIds: [] as string[],
+  clientMessageId: crypto.randomUUID(),
+  ...over,
+});
+
+export const createTicketAs = async (
+  api: Pick<Api, 'port'>,
+  s: Session,
+  over: Record<string, unknown> = {},
+): Promise<TicketJson> => {
+  const r = await as(api, s).post('/tickets', newTicketBody(over));
+  if (r.status !== 201) throw new Error(`create ticket failed: ${r.status} ${r.text}`);
+  return r.json as TicketJson;
+};
+
+export const reply = (body: string, over: Record<string, unknown> = {}) => ({
+  id: crypto.randomUUID(),
+  body,
+  ...over,
+});
+
+/** Same body for any "not there" answer: a foreign ticket and a non-existent one must be indistinguishable. */
+export const errorShape = (r: Res): string => {
+  const e = (r.json as { error?: Record<string, unknown> } | null)?.error ?? {};
+  return JSON.stringify({ status: r.status, code: e.code, message: e.message });
+};
+
+export const createExtraAgents = async (
+  db: Db,
+  n: number,
+  categories: string[],
+): Promise<Array<{ id: string; email: string }>> => {
+  const hash = await hashPassword(PASSWORDS.agent);
+  const out: Array<{ id: string; email: string }> = [];
+  for (let i = 0; i < n; i += 1) {
+    const email = `extra-agent-${crypto.randomUUID().slice(0, 8)}@t.test`;
+    const [row] = await db
+      .insert(users)
+      .values({ email, name: `Extra Agent ${i}`, role: 'agent', passwordHash: hash })
+      .returning({ id: users.id });
+    if (!row) throw new Error('agent insert failed');
+    await db
+      .insert(agentCategories)
+      .values(categories.map((category) => ({ userId: row.id, category })));
+    out.push({ id: row.id, email });
+  }
+  return out;
+};
