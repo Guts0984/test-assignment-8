@@ -26,6 +26,8 @@ jobs:
       - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
+      # a real production build catches what the typechecker cannot (routes, i18n plugin, config)
+      - run: pnpm --filter @helpdesk/web build
       # schema.ts and the committed migrations must not drift apart
       - run: pnpm db:check-drift
       # full output on purpose: when a test fails, the log must say which one

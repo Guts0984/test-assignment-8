@@ -1,5 +1,5 @@
 # Cold start:  cp .env.example .env && docker compose up --build
-# (Block 8 adds the `web` service. The api applies migrations and seeds demo data on boot.)
+# The api applies migrations and seeds demo data on boot; the web app proxies /api/* to it.
 services:
   postgres:
     image: postgres:16-alpine
@@ -50,6 +50,28 @@ services:
     volumes:
       - uploads:/data/uploads
     stop_grace_period: 15s
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
 
 volumes:
   pgdata:

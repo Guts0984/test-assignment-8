@@ -8,3 +8,6 @@ playwright-report
 test-results
 /uploads
 .pnpm-store
+node_modules.*
+.pnpm-store.*
+**/node_modules.old

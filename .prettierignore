@@ -7,3 +7,6 @@ test-assignment-8.md
 drizzle
 pnpm-lock.yaml
 .pnpm-store
+node_modules.*
+.pnpm-store.*
+next-env.d.ts

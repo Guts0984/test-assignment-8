@@ -1,0 +1,74 @@
+{
+  "app": { "name": "Helpdesk" },
+  "common": {
+    "loading": "Loading…",
+    "logout": "Sign out",
+    "language": "Language",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "skipToContent": "Skip to main content",
+    "retry": "Try again",
+    "close": "Close",
+    "unknown": "—"
+  },
+  "nav": {
+    "main": "Main navigation",
+    "myTickets": "My tickets",
+    "queue": "Queue",
+    "dashboard": "Dashboard"
+  },
+  "auth": {
+    "title": "Sign in to support",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "signedIn": "Signed in as {name}",
+    "signedOut": "You have been signed out"
+  },
+  "errors": {
+    "invalidCredentials": "Wrong email or password.",
+    "tooManyAttempts": "Too many attempts. Try again in {seconds, plural, one {# second} other {# seconds}}.",
+    "network": "Cannot reach the server. Check your connection and try again.",
+    "server": "Something went wrong on the server. Please try again later.",
+    "unavailable": "The service is temporarily unavailable. Try again in a few seconds.",
+    "forbidden": "You do not have access to this action.",
+    "notFound": "Not found.",
+    "conflict": "The data has changed. Reload it and try again.",
+    "unknown": "The action could not be completed."
+  },
+  "validation": {
+    "required": "This field is required",
+    "email": "Enter a valid email address",
+    "tooBig": "At most {n, plural, one {# character} other {# characters}}",
+    "tooSmall": "At least {n, plural, one {# character} other {# characters}}",
+    "invalid": "Invalid value"
+  },
+  "role": { "customer": "Customer", "agent": "Agent", "lead": "Lead" },
+  "status": {
+    "new": "New",
+    "open": "Open",
+    "pending": "Waiting for customer",
+    "resolved": "Resolved",
+    "closed": "Closed"
+  },
+  "priority": { "low": "Low", "normal": "Normal", "high": "High", "urgent": "Urgent" },
+  "category": {
+    "payment": "Payment",
+    "delivery": "Delivery",
+    "account": "Account",
+    "technical": "Technical problem",
+    "other": "Other"
+  },
+  "tickets": {
+    "count": "{count, plural, one {# ticket} other {# tickets}}",
+    "unread": "{count, plural, one {# unread reply} other {# unread replies}}",
+    "comingSoon": "This section is coming soon."
+  },
+  "live": {
+    "newMessage": "New message in ticket {code}",
+    "connectionLost": "Live updates connection lost, reconnecting…"
+  }
+}

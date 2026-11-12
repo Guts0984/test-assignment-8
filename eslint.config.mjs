@@ -9,9 +9,11 @@ const noClasses = {
 export default tseslint.config(
   {
     ignores: [
-      '**/.pnpm-store/**',
+      '**/.pnpm-store*/**',
+      '**/node_modules.*/**',
       '**/dist/**',
       '**/.next/**',
+      '**/next-env.d.ts',
       '**/node_modules/**',
       '**/coverage/**',
       '**/drizzle/**',
@@ -40,9 +42,31 @@ export default tseslint.config(
   },
   {
     // Plain Node scripts (CI/test tooling).
-    files: ['scripts/**/*.mjs', '*.mjs'],
+    files: ['scripts/**/*.mjs', '*.mjs', 'apps/web/*.mjs'],
     languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
   },
+  // Feature-Sliced Design: a layer may import only from layers BELOW it.
+  ...[
+    ['shared', ['entities', 'features', 'widgets', 'pages', 'app']],
+    ['entities', ['features', 'widgets', 'pages', 'app']],
+    ['features', ['widgets', 'pages', 'app']],
+    ['widgets', ['pages', 'app']],
+    ['pages', ['app']],
+  ].map(([layer, forbidden]) => ({
+    files: [`apps/web/src/${layer}/**/*.{ts,tsx}`],
+    ignores: ['**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: forbidden.map((f) => ({
+            group: [`@/${f}`, `@/${f}/*`],
+            message: `FSD: "${layer}" must not import from the higher layer "${f}".`,
+          })),
+        },
+      ],
+    },
+  })),
   {
     // NestJS is class-based by design.
     files: ['apps/api/**/*.ts'],

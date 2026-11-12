@@ -6,6 +6,9 @@ packages:
 allowBuilds:
   '@scarf/scarf': false # analytics postinstall of swagger-ui deps: not allowed
   esbuild: true
+  # native binaries come as optional dependencies; their postinstall fallbacks are not needed
+  '@swc/core': false
+  '@parcel/watcher': false
 
 # No pnpm banner/progress: `pnpm test` prints exactly one summary line. Errors are still shown.
 # Full output: `pnpm --loglevel=info <cmd>`.
