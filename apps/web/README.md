@@ -4,7 +4,7 @@ Foundation (sign-in, shell, i18n uk/en, dark theme, typed API client, SSE client
 and the screens: the customer cabinet and the staff work place.
 
 ```bash
-cp .env.example .env && docker compose up --build      # web on http://localhost:3000 (api only behind /api/*)
+cp .env.example .env && docker compose up --build      # everything on http://localhost:8080 (web at /, api at /api, via nginx)
 pnpm --filter @helpdesk/web test                       # 295 unit tests (Vitest + Testing Library + MSW + axe)
 ```
 

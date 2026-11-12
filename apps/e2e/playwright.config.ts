@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/** Runs against the real stack (`docker compose up`): web on :3000, api behind /api, PostgreSQL, real SSE. */
+/** Runs against the real stack (`docker compose up`): nginx on :8080 (web at /, api at /api), PostgreSQL, real SSE. */
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
@@ -10,7 +10,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000',
+    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8080',
     locale: 'en-US',
     timezoneId: 'Europe/Kyiv',
     trace: 'retain-on-failure',

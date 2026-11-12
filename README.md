@@ -15,10 +15,10 @@ packages/db      Drizzle schema, migrations, seed            → packages/db/REA
 
 ```bash
 cp .env.example .env          # the only manual step
-docker compose up --build     # postgres + api (migrates and seeds on boot, ~30 s) + web
+docker compose up --build     # postgres + api (migrates and seeds on boot, ~30 s) + web + nginx
 ```
 
-Open <http://localhost:3000>. The api is only reachable through the web origin (`/api/*`, Swagger at `/api/docs`).
+Everything is on **one port, 8080**, behind nginx: the app at <http://localhost:8080>, the API at <http://localhost:8080/api> (health: `/api/health`), Swagger at <http://localhost:8080/docs>. Only nginx is published; `api` and `web` are internal. nginx sets `X-Forwarded-For` itself (never forwards a client-supplied one) and the api trusts only the private compose network, so rate limiting sees real client addresses.
 Attachments live in the `uploads` volume.
 
 **Accounts** (all seeded; 20 000 tickets over six months, 200 customers, 6 agents, 1 lead):
@@ -108,7 +108,7 @@ configuration, over subject **and** messages). The full index table with `EXPLAI
 
 - **No Redis, no queue, no mail, no S3** (forbidden): sessions, rate limits, jobs, locks and the event log live in PostgreSQL; files on a volume.
 - **Rate limiting** is per client address (IPv6 per /64) and per (address + account) — never per account alone, so nobody can lock a victim out. A _distributed_ attack on one account is limited only by hashing cost and per-address budgets; add MFA/CAPTCHA for more. `X-Forwarded-For` is trusted only from `TRUSTED_PROXIES`.
-- Same-origin API behind a Next proxy (cookies and the CSRF `Origin` check just work). SSE passes through it.
+- One origin (nginx): cookies and the CSRF `Origin` check just work, SSE streams through with buffering off. `CORS_ORIGINS` must match the public URL (`http://localhost:8080`).
 - Averages in statistics use wall-clock time; public holidays are not modelled; SLA warnings notify the assignee only.
 - Uploads are buffered in memory (≤ 10 MB × a small concurrency limit) rather than streamed to disk, to avoid a multipart dependency.
 - Full-text search uses the `simple` configuration (no Ukrainian stemmer ships with PostgreSQL), so there is no stemming.

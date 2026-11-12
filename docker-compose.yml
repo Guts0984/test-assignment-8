@@ -1,5 +1,6 @@
 # Cold start:  cp .env.example .env && docker compose up --build
-# The api applies migrations and seeds demo data on boot; the web app proxies /api/* to it.
+# nginx is the only published service: http://localhost:8080 → web, http://localhost:8080/api → api.
+# The api applies migrations and seeds demo data on boot.
 services:
   postgres:
     image: postgres:16-alpine
@@ -30,8 +31,9 @@ services:
       # a plain-http local run: browsers drop Secure cookies on http://localhost in some setups
       COOKIE_SECURE: 'false'
       UPLOADS_DIR: /data/uploads
-    ports:
-      - '127.0.0.1:${PORT:-3001}:3001'
+      # the api is not published: only nginx (on the private compose network) can reach it, so its X-Forwarded-For is trusted
+      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      CORS_ORIGINS: http://localhost:${PUBLIC_PORT:-8080}
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,8 +57,6 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
-    ports:
-      - '127.0.0.1:${WEB_PORT:-3000}:3000'
     depends_on:
       api:
         condition: service_healthy
@@ -72,6 +72,23 @@ services:
       timeout: 3s
       retries: 20
       start_period: 15s
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - '${PUBLIC_PORT:-8080}:8080'
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8080/api/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
 volumes:
   pgdata:
