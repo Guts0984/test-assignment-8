@@ -4,13 +4,28 @@ on: [push, pull_request]
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: helpdesk
+          POSTGRES_PASSWORD: helpdesk_ci_password
+          POSTGRES_DB: helpdesk
+        ports: ['5440:5432']
+        options: >-
+          --health-cmd "pg_isready -U helpdesk" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://helpdesk:helpdesk_ci_password@localhost:5440/helpdesk
+      TEST_ADMIN_DATABASE_URL: postgres://helpdesk:helpdesk_ci_password@localhost:5440/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - run: npm run build --workspace @helpdesk/shared
+      - run: npm run build
       - run: npm run lint
       - run: npm run typecheck
+      # schema.ts and the committed migrations must not drift apart
+      - run: npm run db:check-drift
       - run: npm test
-  # Later blocks add: api integration (postgres service), web unit, e2e on the compose stack.
+  # Later blocks add: api integration + hostile-client suite, web unit, e2e on the compose stack.

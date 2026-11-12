@@ -10,12 +10,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @helpdesk/shared && npm run build -w @helpdesk/db",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "test:e2e": "npm run test:e2e --workspaces --if-present"
+    "test": "npm run build && npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspaces --if-present",
+    "db:up": "docker compose -f docker-compose.db.yml up -d postgres",
+    "db:down": "docker compose -f docker-compose.db.yml down",
+    "db:check-drift": "npm run generate -w @helpdesk/db && git diff --exit-code -- packages/db/drizzle"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
