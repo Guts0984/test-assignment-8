@@ -1,0 +1,6 @@
+package-lock.json
+dist
+.next
+coverage
+plan.md
+test-assignment-8.md
