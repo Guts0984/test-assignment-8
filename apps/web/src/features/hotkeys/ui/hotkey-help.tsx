@@ -29,6 +29,7 @@ export const HotkeyHelp = ({ open, onClose }: { open: boolean; onClose: () => vo
   const rows: Array<[string, string]> = [
     ['j', t('next')],
     ['k', t('prev')],
+    ['x / Space', t('select')],
     ['Enter', t('open')],
     ['/', t('search')],
     ['?', t('help')],

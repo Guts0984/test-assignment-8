@@ -282,7 +282,8 @@
       "search": "Jump to search",
       "help": "Show this help",
       "hint": "Press ? for keyboard shortcuts",
-      "send": "Send reply"
+      "send": "Send reply",
+      "select": "Select / unselect the highlighted ticket"
     }
   },
   "staff": {

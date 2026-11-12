@@ -21,6 +21,24 @@ import { Button } from '@/shared/ui/button';
 import { TicketTable } from '@/widgets/ticket-table/ui/ticket-table';
 
 /** The staff work place: filtered, live list with selection, bulk actions, "take next" and keyboard shortcuts. */
+const CURSOR_KEY = 'helpdesk:queue-cursor';
+const rememberCursor = (id: string): void => {
+  try {
+    sessionStorage.setItem(CURSOR_KEY, id);
+  } catch {
+    /* storage may be unavailable: the highlight is a convenience */
+  }
+};
+const takeRememberedCursor = (): string | null => {
+  try {
+    const id = sessionStorage.getItem(CURSOR_KEY);
+    sessionStorage.removeItem(CURSOR_KEY);
+    return id;
+  } catch {
+    return null;
+  }
+};
+
 export const QueuePage = () => {
   const t = useTranslations();
   const router = useRouter();
@@ -44,7 +62,13 @@ export const QueuePage = () => {
     if (idx !== cursor && idx !== -1) setCursor(idx);
   }, [items, cursorId, cursor]);
 
-  const open = useCallback((id: string) => router.push(`/tickets/${id}`), [router]);
+  const open = useCallback(
+    (id: string) => {
+      rememberCursor(id); // Back returns to the list with the same ticket highlighted
+      router.push(`/tickets/${id}`);
+    },
+    [router],
+  );
   const toggle = useCallback(
     (id: string) =>
       setSelected((s) => {
@@ -60,12 +84,30 @@ export const QueuePage = () => {
     [items],
   );
 
+  // after Back the list is rebuilt: put the highlight back on the ticket that was opened
+  useEffect(() => {
+    if (cursor !== -1 || items.length === 0) return;
+    const id = takeRememberedCursor();
+    const idx = id ? items.findIndex((i) => i.id === id) : -1;
+    if (idx !== -1) setCursor(idx);
+  }, [items, cursor]);
+
   useHotkeys({
     j: () => setCursor((c) => moveSelection(c, 1, items.length)),
     k: () => setCursor((c) => moveSelection(c, -1, items.length)),
-    Enter: () => {
+    x: () => {
       const tk = items[cursor];
-      if (tk) open(tk.id);
+      if (tk) toggle(tk.id);
+    },
+    ' ': () => {
+      const tk = items[cursor];
+      if (tk) toggle(tk.id);
+    },
+    Enter: () => {
+      // Enter on a focused row checkbox opens THAT row; otherwise the highlighted one
+      const focusedRow = (document.activeElement as HTMLElement | null)?.closest('tr[data-id]');
+      const id = focusedRow?.getAttribute('data-id') ?? items[cursor]?.id;
+      if (id) open(id);
     },
     '/': () => document.getElementById('queue-search')?.focus(),
     '?': () => setHelp(true),

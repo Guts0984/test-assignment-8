@@ -19,6 +19,24 @@ describe('FilterBar search debounce', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ q: 'refund' }), 'replace');
   });
 
+  it('a parent re-render (live update, refetch) while the search is pending neither drops nor delays it', () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const { rerender } = renderApp(
+      <FilterBar filters={DEFAULT_FILTERS} onChange={() => onChange(1)} />,
+      {
+        locale: 'en',
+      },
+    );
+    fireEvent.change(screen.getByLabelText(label), { target: { value: 'refund' } });
+    act(() => void vi.advanceTimersByTime(200));
+    // the parent re-renders with a NEW inline onChange, as the queue page does on every live update
+    rerender(<FilterBar filters={DEFAULT_FILTERS} onChange={() => onChange(2)} />);
+    act(() => void vi.advanceTimersByTime(150));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(2); // fired once, at the original time, with the latest handler
+  });
+
   it('a pending search NEVER navigates after the queue is gone (the agent already opened a ticket: the old timer must not drag them back to /queue)', () => {
     vi.useFakeTimers();
     const onChange = vi.fn();

@@ -41,6 +41,7 @@ const rows = [1, 2, 3, 4, 5].map((n) =>
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 beforeEach(() => {
   requests = [];
+  sessionStorage.clear(); // the remembered highlight must not leak between tests
   search.current = new URLSearchParams();
   Object.values(router).forEach((f) => f.mockClear());
   server.use(
@@ -164,6 +165,48 @@ describe('queue: keyboard (acceptance: j/k/Enter, / and ?)', () => {
     expect(within(dialog).getByText('Next ticket')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('x and Space select / unselect the highlighted row (nothing highlighted: nothing happens)', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByText('Subject 1');
+    await user.keyboard('x');
+    expect(body().some((r) => r.getAttribute('aria-selected') === 'true')).toBe(false);
+    await user.keyboard('jj');
+    await user.keyboard('x');
+    expect(body()[1]).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard(' ');
+    expect(body()[1]).toHaveAttribute('aria-selected', 'false');
+    await user.keyboard('k{ }');
+    expect(body()[0]).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Space on a FOCUSED row checkbox toggles that checkbox only; Enter on it opens THAT row, not the highlighted one', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByText('Subject 1');
+    await user.keyboard('j'); // highlight row 0
+    const box = within(body()[2]!).getByRole('checkbox');
+    box.focus();
+    await user.keyboard(' ');
+    expect(body()[2]).toHaveAttribute('aria-selected', 'true');
+    expect(body()[0]).toHaveAttribute('aria-selected', 'false'); // the highlighted row was not toggled
+    await user.keyboard('{Enter}');
+    expect(router.push).toHaveBeenCalledWith(`/tickets/${rows[2]?.id}`);
+    expect(router.push).not.toHaveBeenCalledWith(`/tickets/${rows[0]?.id}`);
+  });
+
+  it('after opening a ticket and coming Back (the page is rebuilt) the same ticket is highlighted again', async () => {
+    const user = userEvent.setup();
+    const first = mount();
+    await screen.findByText('Subject 1');
+    await user.keyboard('jj{Enter}');
+    expect(router.push).toHaveBeenCalledWith(`/tickets/${rows[1]?.id}`);
+    first.unmount(); // navigation away...
+    mount(); // ...and Back
+    await screen.findByText('Subject 1');
+    await waitFor(() => expect(body()[1]).toHaveAttribute('aria-current', 'true'));
   });
 
   it('typing "j", "k", "/" or "?" into the search box does NOT trigger shortcuts', async () => {

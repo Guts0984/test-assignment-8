@@ -64,7 +64,7 @@ test.describe('acceptance #3 — a customer writes, support answers, the custome
     );
     await expect(customer.getByText('Open', { exact: true }).first()).toBeVisible(); // new → open by the rules
     await expect(customer.getByTestId('live-polite')).toContainText(
-      'There is a new reply from support',
+      /New message in ticket|new reply from support/, // the live region speaks the latest of the two reply announcements
     );
     expect(problems.filter((p) => /hydrat|did not match/i.test(p))).toEqual([]);
     await customerCtx.close();

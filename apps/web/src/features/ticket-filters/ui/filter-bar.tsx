@@ -34,18 +34,21 @@ export const FilterBar = ({
   const latest = useRef(filters);
   latest.current = filters;
   useEffect(() => setQ(filters.q), [filters.q]); // Back/Forward and saved views change the URL: follow it
+  // ONE debounce for the life of the bar: `onChange` is read through a ref, so a parent re-render (a live update, a
+  // refetch) neither loses nor restarts a pending search; it is cancelled only when the bar goes away.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const commitSearch = useRef(
-    debounce((value: string) => onChange({ ...latest.current, q: value }, 'replace'), 300),
+    debounce(
+      (value: string) => onChangeRef.current({ ...latest.current, q: value }, 'replace'),
+      300,
+    ),
   );
   useEffect(() => {
-    const d = debounce(
-      (value: string) => onChange({ ...latest.current, q: value }, 'replace'),
-      300,
-    );
-    commitSearch.current = d;
+    const d = commitSearch.current;
     // a pending search must never navigate after the queue is gone (the user already opened a ticket)
     return () => d.cancel();
-  }, [onChange]);
+  }, []);
   const set = (patch: Partial<TicketFilters>) => onChange({ ...filters, ...patch });
   const active =
     JSON.stringify({ ...filters, sort: 'created', order: 'desc' }) !==
