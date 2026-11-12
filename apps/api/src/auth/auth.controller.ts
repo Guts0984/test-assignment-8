@@ -6,10 +6,11 @@ import type { Request, Response } from 'express';
 import { jsonSchemaOf } from '../http/swagger';
 import { TOKENS } from '../tokens';
 import type { Env } from '../env';
+import { appError } from '../lib/errors';
 import { ZodPipe } from '../http/zod.pipe';
 import { clearSessionCookie, parseCookies, serializeSessionCookie } from '../lib/cookies';
 import type { Limiter } from '../lib/limiter';
-import { deleteSessionByToken, findSession } from '../lib/sessions';
+import { deleteSessionByToken, loadSessionUser } from '../lib/sessions';
 import type { createSemaphore } from '../lib/semaphore';
 import { Public } from './decorators';
 import { login } from './login';
@@ -52,10 +53,9 @@ export class AuthController {
         secure: this.env.COOKIE_SECURE,
       }),
     );
-    // Read the profile through the new session so /auth/login and /me can never disagree.
-    const session = await findSession(this.db.db, result.token);
-    if (!session) throw new Error('session vanished right after creation');
-    return { user: session.user };
+    const user = await loadSessionUser(this.db.db, result.userId);
+    if (!user) throw appError(401, 'unauthenticated', 'Invalid email or password');
+    return { user };
   }
 
   @Public()

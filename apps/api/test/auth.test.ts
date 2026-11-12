@@ -109,15 +109,18 @@ describe('authentication & sessions (real server, real PostgreSQL)', () => {
       expect(r.status).toBe(400);
       expect(r.ms).toBeLessThan(200);
     });
-    it('10 simultaneous correct logins all succeed and leave no failure count behind', async () => {
-      const rs = await Promise.all(
-        Array.from({ length: 10 }, () => login(api, u.lead.email, PASSWORDS.lead, '127.0.0.40')),
-      );
-      expect(rs.every((r) => r.status === 200)).toBe(true);
+    it('bursts of simultaneous logins of ONE user all succeed (the session cap evicts old sessions, it must never fail a login) and leave no failure count behind', async () => {
+      for (let round = 0; round < 5; round += 1) {
+        const rs = await Promise.all(
+          Array.from({ length: 10 }, () => login(api, u.lead.email, PASSWORDS.lead, '127.0.0.40')),
+        );
+        expect(rs.map((r) => r.status)).toEqual(Array(10).fill(200));
+      }
       const rows = await t.db.execute<{ count: number }>(
         sql`SELECT count FROM rate_limits WHERE key LIKE 'login:%127.0.0.40%'`,
       );
       expect(rows.rows.every((r) => Number(r.count) === 0)).toBe(true);
+      expect(await sessionRows(u.lead.id)).toHaveLength(3);
     });
   });
 

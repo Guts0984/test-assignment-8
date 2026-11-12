@@ -32,6 +32,8 @@ export const createSession = async (
 ): Promise<string> => {
   const token = newToken();
   await db.transaction(async (tx) => {
+    // concurrent logins of ONE user must not prune each other's brand-new sessions mid-flight
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`);
     await tx.insert(sessions).values({
       id: hashToken(token),
       userId: input.userId,
@@ -106,6 +108,31 @@ export const findSession = async (
       categories: cats.map((c) => c.category as Category),
     },
   };
+};
+
+/** The profile of a user, read from the user record (never through a session that a concurrent login may have evicted). */
+export const loadSessionUser = async (db: Db, userId: string): Promise<SessionUser | null> => {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      role: users.role,
+      locale: users.locale,
+    })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.disabled, false)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const cats =
+    row.role === 'agent'
+      ? await db
+          .select({ category: agentCategories.category })
+          .from(agentCategories)
+          .where(eq(agentCategories.userId, row.id))
+      : [];
+  return { ...row, categories: cats.map((c) => c.category as Category) };
 };
 
 export const deleteSessionByToken = async (db: Db, token: string): Promise<void> => {
