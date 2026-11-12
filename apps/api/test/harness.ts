@@ -440,24 +440,46 @@ export const upload = (
   });
 };
 
+/** A small but structurally valid PDF: header, two objects, a classic xref table whose offsets are exact, trailer. */
+export const makePdf = (extra = ''): Buffer => {
+  const header = '%PDF-1.7\n';
+  const objs = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    `2 0 obj\n<< /Type /Pages /Kids [] /Count 0 ${extra}>>\nendobj\n`,
+  ];
+  let body = header;
+  const offsets: number[] = [];
+  for (const o of objs) {
+    offsets.push(body.length);
+    body += o;
+  }
+  const xrefAt = body.length;
+  const pad = (n: number, w: number) => String(n).padStart(w, '0');
+  const xref =
+    `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` +
+    offsets.map((o) => `${pad(o, 10)} 00000 n \n`).join('');
+  return Buffer.from(
+    `${body}${xref}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`,
+    'latin1',
+  );
+};
+
 export const FILES = {
-  // minimal but REAL files: the upload check validates their structure, not just the first bytes
+  // minimal but REAL files: uploads are decoded and re-encoded (images) / parsed (PDF), so fakes are refused
   png: Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGM4ISeHFTEMLQkAkL9BAbKfPiIAAAAASUVORK5CYII=',
     'base64',
   ),
-  jpeg: Buffer.from([
-    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
-    0x00, 0x01, 0x00, 0x00, 0xff, 0xd9,
-  ]),
-  gif: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'),
-  webp: Buffer.concat([
-    Buffer.from('RIFF'),
-    Buffer.from([0x10, 0, 0, 0]),
-    Buffer.from('WEBPVP8L'),
-    Buffer.from([0x04, 0, 0, 0, 0x2f, 0, 0, 0]),
-  ]),
-  pdf: Buffer.from('%PDF-1.7\n1 0 obj\n<< >>\nendobj\ntrailer\n<< >>\nstartxref\n9\n%%EOF\n'),
+  jpeg: Buffer.from(
+    '/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAgDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCAAHlhf//Z',
+    'base64',
+  ),
+  gif: Buffer.from('R0lGODlhCAAIAIAAAExpccgeHiH5BAUAAAAALAAAAAAIAAgAAAIHjI+py+1dAAA7', 'base64'),
+  webp: Buffer.from(
+    'UklGRjoAAABXRUJQVlA4IC4AAACwAQCdASoIAAgAAUAmJaACdLoABDAAAP7x3I/4DdfFtMv/vYL/3YL/3YL/WwAA',
+    'base64',
+  ),
+  pdf: makePdf(),
   text: Buffer.from('Hello, звіт №1 — plain text\nline two\n'),
   exe: Buffer.concat([
     Buffer.from('MZ'),

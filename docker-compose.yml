@@ -31,8 +31,9 @@ services:
       # a plain-http local run: browsers drop Secure cookies on http://localhost in some setups
       COOKIE_SECURE: 'false'
       UPLOADS_DIR: /data/uploads
-      # the api is not published: only nginx (on the private compose network) can reach it, so its X-Forwarded-For is trusted
-      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      # ONLY nginx (fixed address below) is trusted to say who the client is. Trusting whole private ranges would make every
+      # LAN/VPN/Docker-host client look like a proxy and fold them into one rate-limit bucket.
+      TRUSTED_PROXIES: 172.30.77.10
       CORS_ORIGINS: http://localhost:${PUBLIC_PORT:-8080}
     depends_on:
       postgres:
@@ -75,6 +76,9 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
+    networks:
+      default:
+        ipv4_address: 172.30.77.10
     volumes:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
@@ -89,6 +93,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.77.0/24
 
 volumes:
   pgdata:

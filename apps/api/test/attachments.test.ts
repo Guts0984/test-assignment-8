@@ -1,3 +1,5 @@
+import { crc32 as zlibCrc32 } from 'node:zlib';
+import sharp from 'sharp';
 import { readdirSync, statSync } from 'node:fs';
 import http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -6,6 +8,7 @@ import { sql } from 'drizzle-orm';
 import { contentDisposition, sanitizeFilename, sniffMime } from '../src/attachments/sniff';
 import {
   FILES,
+  makePdf,
   PASSWORDS,
   as,
   createTicketAs,
@@ -124,7 +127,11 @@ describe('attachments (real server, real PostgreSQL, real disk)', () => {
     ] as const)('%s → stored as %s', async (k, mime, name) => {
       const r = await upload(api, customer, { name, data: FILES[k] });
       expect(r.status, r.text).toBe(201);
-      expect(r.json).toMatchObject({ name, mime, sizeBytes: FILES[k].length });
+      expect(r.json).toMatchObject({ name, mime });
+      const size = (r.json as { sizeBytes: number }).sizeBytes;
+      // images are stored RE-ENCODED (their size may differ); PDF and text are stored byte for byte
+      if (k === 'pdf' || k === 'text') expect(size).toBe(FILES[k].length);
+      else expect(size).toBeGreaterThan(0);
     });
     it('the type comes from the CONTENT and the name must agree: an .exe named .png is refused, a PNG named .exe is refused too', async () => {
       const bad = await upload(api, customer, {
@@ -159,6 +166,111 @@ describe('attachments (real server, real PostgreSQL, real disk)', () => {
         expect(r.status, label).toBe(415);
       }
       expect(await rows()).toBe(before);
+    });
+    it('GIF, WebP and PDF with raw executable bytes INSIDE a plausible structure are refused (they are not real images / documents)', async () => {
+      const pe = FILES.exe;
+      const gif = Buffer.concat([
+        Buffer.from('GIF89a'),
+        Buffer.from([1, 0, 1, 0, 0, 0, 0]),
+        pe,
+        Buffer.from(';'),
+      ]);
+      const sos = FILES.jpeg.indexOf(Buffer.from([0xff, 0xda]));
+      const jpeg = Buffer.concat([FILES.jpeg.subarray(0, sos + 14), pe, Buffer.from([0xff, 0xd9])]);
+      const chunk = Buffer.concat([Buffer.from('VP8 '), Buffer.from([pe.length, 0, 0, 0]), pe]);
+      const webpBody = Buffer.concat([Buffer.from('WEBP'), chunk]);
+      const webp = Buffer.concat([
+        Buffer.from('RIFF'),
+        Buffer.from([webpBody.length % 256, Math.floor(webpBody.length / 256), 0, 0]),
+        webpBody,
+      ]);
+      const pdf = Buffer.concat([
+        Buffer.from('%PDF-1.7\n'),
+        pe,
+        Buffer.from('\nstartxref\n9\n%%EOF\n'),
+      ]);
+      // libjpeg decodes garbage scan data leniently, so a JPEG like this may be accepted — but only as OUR re-encoding:
+      // the executable bytes must not survive in what is stored
+      const jp = await upload(api, customer, { name: 'jpg_exe.jpg', data: jpeg });
+      if (jp.status === 201) {
+        const dl = await request(api, {
+          path: `/attachments/${(jp.json as { id: string }).id}`,
+          cookie: customer.cookie,
+        });
+        expect(dl.text.includes('This program cannot be run')).toBe(false);
+      } else expect(jp.status).toBe(415);
+      const before = await rows();
+      for (const [name, data] of [
+        ['gif_exe.gif', gif],
+        ['webp_exe.webp', webp],
+        ['pdf_exe.pdf', pdf],
+      ] as const)
+        expect((await upload(api, customer, { name, data })).status, name).toBe(415);
+      expect(await rows()).toBe(before);
+    });
+    it('a PDF must parse: a wrong xref offset, no /Root, or embedded-file / launch / script actions are refused', async () => {
+      const good = FILES.pdf.toString('latin1');
+      const variants: Array<[string, Buffer]> = [
+        [
+          'bad offset',
+          Buffer.from(good.replace(/(\d{10}) 00000 n/, '0000000003 00000 n'), 'latin1'),
+        ],
+        ['no root', Buffer.from(good.replace('/Root 1 0 R', ''), 'latin1')],
+        ['javascript', makePdf('/AA << /JS (app.alert(1)) >> ')],
+        ['embedded file', makePdf('/Names << /EmbeddedFiles << >> >> ')],
+        ['launch', makePdf('/OpenAction << /S /Launch /F (cmd.exe) >> ')],
+      ];
+      for (const [label, data] of variants)
+        expect((await upload(api, customer, { name: 'x.pdf', data })).status, label).toBe(415);
+      expect((await upload(api, customer, { name: 'ok.pdf', data: FILES.pdf })).status).toBe(201);
+    });
+    it('what is STORED is our re-encoding of the pixels: an executable hidden in a PNG text chunk / JPEG comment is gone from the download', async () => {
+      const marker = Buffer.from('This program cannot be run in DOS mode.');
+      const crcOf = (b: Buffer) => zlibCrc32(b);
+      const tEXt = (() => {
+        const type = Buffer.from('tEXt');
+        const data = Buffer.concat([Buffer.from('payload\0'), marker]);
+        const len = Buffer.alloc(4);
+        len.writeUInt32BE(data.length);
+        const crc = Buffer.alloc(4);
+        crc.writeUInt32BE(crcOf(Buffer.concat([type, data])));
+        return Buffer.concat([len, type, data, crc]);
+      })();
+      const png = Buffer.concat([FILES.png.subarray(0, 33), tEXt, FILES.png.subarray(33)]);
+      const comLen = Buffer.alloc(2);
+      comLen.writeUInt16BE(marker.length + 2);
+      const jpeg = Buffer.concat([
+        FILES.jpeg.subarray(0, 2),
+        Buffer.from([0xff, 0xfe]),
+        comLen,
+        marker,
+        FILES.jpeg.subarray(2),
+      ]);
+      for (const [name, data] of [
+        ['hidden.png', png],
+        ['hidden.jpg', jpeg],
+      ] as const) {
+        expect(data.includes(marker), `${name}: the fixture carries the payload`).toBe(true);
+        const up = await upload(api, customer, { name, data });
+        expect(up.status, `${name}: ${up.text}`).toBe(201);
+        const dl = await request(api, {
+          path: `/attachments/${(up.json as { id: string }).id}`,
+          cookie: customer.cookie,
+        });
+        expect(dl.status).toBe(200);
+        expect(dl.text.includes(marker.toString()), `${name}: payload survived storage`).toBe(
+          false,
+        );
+      }
+    });
+    it('a decompression bomb (huge dimensions, tiny file) is refused', async () => {
+      const bomb = await sharp({
+        create: { width: 12_000, height: 12_000, channels: 3, background: '#000000' },
+      })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
+      expect(bomb.length).toBeLessThan(10 * 1024 * 1024);
+      expect((await upload(api, customer, { name: 'bomb.png', data: bomb })).status).toBe(415);
     });
     it('the name must agree with the content: run.bat / a.html / evil.exe are refused, a name without extension gets one', async () => {
       for (const name of ['run.bat', 'a.html', 'evil.exe', 'x.png']) {

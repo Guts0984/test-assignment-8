@@ -48,6 +48,7 @@ test.describe('acceptance #3 — a customer writes, support answers, the custome
     await signInUi(agent, USERS.agent1);
     await agent.goto('/queue');
     await agent.getByLabel('Search subject and messages').fill(subject);
+    await expect(agent).toHaveURL(/[?&]q=/); // the debounced search has landed in the URL; a late replace must not override the click below
     await agent.getByRole('link', { name: subject }).click();
     await expect(agent.getByRole('heading', { level: 1, name: subject })).toBeVisible();
     await agent

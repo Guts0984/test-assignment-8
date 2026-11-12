@@ -116,6 +116,19 @@ describe('client address resolution (X-Forwarded-For)', () => {
     expect(resolveClientIp('10.0.0.5', '192.168.1.1, 10.0.0.5', proxy)).toBe('10.0.0.5');
     expect(resolveClientIp(undefined, '1.1.1.1', none)).toBe('0.0.0.0');
   });
+  it('with ONE trusted proxy (as in compose) clients on LAN / VPN / Docker-host private addresses stay distinct', () => {
+    const nginx = buildTrustedProxies(['172.30.77.10']);
+    const a = resolveClientIp('172.30.77.10', '192.168.1.10', nginx);
+    const b = resolveClientIp('172.30.77.10', '192.168.1.20', nginx);
+    expect(a).toBe('192.168.1.10');
+    expect(b).toBe('192.168.1.20');
+    expect(limiterKeyForIp(a)).not.toBe(limiterKeyForIp(b));
+    expect(resolveClientIp('172.30.77.10', '172.19.0.1', nginx)).toBe('172.19.0.1'); // the Docker host gateway
+    expect(resolveClientIp('172.30.77.10', '10.8.0.5', nginx)).toBe('10.8.0.5'); // a VPN client
+    // the old compose setting trusted the whole private ranges: every such client collapsed into the proxy's address
+    const broad = buildTrustedProxies(['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']);
+    expect(resolveClientIp('172.30.77.10', '192.168.1.10', broad)).toBe('172.30.77.10');
+  });
   it('validates TRUSTED_PROXIES entries', () => {
     expect(() => buildTrustedProxies(['nonsense'])).toThrow(/TRUSTED_PROXIES/);
     expect(() => buildTrustedProxies(['10.0.0.0/33'])).toThrow(/prefix/);

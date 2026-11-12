@@ -86,12 +86,61 @@ const validWebp = (b: Uint8Array): boolean => {
   return known && 20 + le32(b, 16) <= b.length;
 };
 
-/** PDF: a version header, then startxref and %%EOF near the end. */
+const OBJ_AT = /^\s*\d+\s+\d+\s+obj\b/;
+/** Active content or embedded payloads: a PDF carrying any of these is refused (plain keywords; compressed object streams are not inspected). */
+const PDF_ACTIVE =
+  /\/(EmbeddedFile|EmbeddedFiles|Launch|JavaScript|JS|RichMedia|SubmitForm|ImportData|GoToE|GoToR)\b/;
+
+/**
+ * PDF, parsed instead of pattern-matched: version header; `startxref` pointing at a real cross-reference section; every
+ * classic xref entry pointing at an `N G obj`; a trailer naming /Root; no embedded files / launch / script actions.
+ * (A binary payload inside a valid stream cannot be told from data, which is why PDFs are served only as attachments
+ * under a sandboxing CSP and are never rendered by the app.)
+ */
 const validPdf = (b: Uint8Array): boolean => {
-  const head = new TextDecoder('latin1').decode(b.subarray(0, 12));
-  if (!/^%PDF-[12]\.\d[\r\n]/.test(head)) return false;
-  const tail = new TextDecoder('latin1').decode(b.subarray(Math.max(0, b.length - 1024)));
-  return tail.includes('startxref') && /%%EOF\s*$/.test(tail);
+  const text = new TextDecoder('latin1').decode(b);
+  if (!/^%PDF-[12]\.\d[\r\n]/.test(text.slice(0, 12))) return false;
+  const tailStart = Math.max(0, text.length - 1024);
+  const tail = text.slice(tailStart);
+  const m = /startxref\s+(\d{1,12})\s+%%EOF\s*$/.exec(tail);
+  if (!m) return false;
+  const xrefAt = Number(m[1]);
+  if (!Number.isSafeInteger(xrefAt) || xrefAt <= 0 || xrefAt >= b.length) return false;
+  if (PDF_ACTIVE.test(text)) return false;
+
+  const atXref = text.slice(xrefAt, xrefAt + 64);
+  if (/^\s*xref\b/.test(atXref)) {
+    // classic table: "start count" then 20-byte entries "oooooooooo ggggg n|f"
+    const re = /\s*(\d+)\s+(\d+)[ \t]*\r?\n/y;
+    let pos = text.indexOf('xref', xrefAt) + 4;
+    let seen = 0;
+    for (;;) {
+      re.lastIndex = pos;
+      const sub = re.exec(text);
+      if (!sub) break;
+      const count = Number(sub[2]);
+      pos = re.lastIndex;
+      if (count > 100_000 || seen + count > 100_000) return false;
+      for (let i = 0; i < count; i += 1) {
+        const e = /^(\d{10}) (\d{5}) ([nf])\s{1,2}/.exec(text.slice(pos, pos + 22));
+        if (!e) return false;
+        if (e[3] === 'n') {
+          const off = Number(e[1]);
+          if (off >= b.length || !OBJ_AT.test(text.slice(off, off + 40))) return false;
+        }
+        pos += e[0].length;
+        seen += 1;
+      }
+    }
+    const trailer = text.indexOf('trailer', pos);
+    return trailer >= 0 && /\/Root\s+\d+\s+\d+\s+R/.test(text.slice(trailer, trailer + 2048));
+  }
+  // cross-reference STREAM (PDF 1.5+): it is an indirect object that declares /Type /XRef and names /Root
+  return (
+    OBJ_AT.test(atXref) &&
+    /\/Type\s*\/XRef/.test(text.slice(xrefAt, xrefAt + 512)) &&
+    /\/Root\s+\d+\s+\d+\s+R/.test(text.slice(xrefAt, xrefAt + 1024))
+  );
 };
 
 /**

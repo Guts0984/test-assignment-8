@@ -9,6 +9,7 @@ allowBuilds:
   # native binaries come as optional dependencies; their postinstall fallbacks are not needed
   '@swc/core': false
   '@parcel/watcher': false
+  sharp: false # prebuilt libvips comes as optional @img/* packages; its postinstall fallback is not needed
 
 # No pnpm banner/progress: `pnpm test` prints exactly one summary line. Errors are still shown.
 # Full output: `pnpm --loglevel=info <cmd>`.

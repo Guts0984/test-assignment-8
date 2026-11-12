@@ -16,6 +16,7 @@ import { fetchTicket } from '../tickets/mutate';
 import { isStaff } from '../tickets/model';
 import { TOKENS } from '../tokens';
 import { readSingleFile } from './multipart';
+import { reencodeImage } from './image';
 import { contentDisposition, nameForMime, sanitizeFilename, sniffMime } from './sniff';
 import type { Storage } from './storage';
 
@@ -86,13 +87,22 @@ export class AttachmentsController {
             'unsupported_media_type',
             'The file extension does not match the file content',
           );
-        const key = await this.storage.save(bytes);
+        // images are DECODED and stored re-encoded: payloads hidden in comment blocks, chunks or trailing data are dropped
+        const stored =
+          mime === 'image/png' ||
+          mime === 'image/jpeg' ||
+          mime === 'image/gif' ||
+          mime === 'image/webp'
+            ? await reencodeImage(bytes, mime)
+            : bytes;
+        if (!stored) throw appError(415, 'unsupported_media_type', 'The file is not a valid image');
+        const key = await this.storage.save(stored);
         try {
           const ins = await this.db.db.execute<{ id: string }>(sql`
             INSERT INTO attachments (uploader_id, original_name, mime, size_bytes, storage_key, sha256)
-            VALUES (${u.id}, ${name}, ${mime}, ${bytes.length}, ${key}, ${createHash('sha256').update(bytes).digest('hex')})
+            VALUES (${u.id}, ${name}, ${mime}, ${stored.length}, ${key}, ${createHash('sha256').update(stored).digest('hex')})
             RETURNING id`);
-          return { id: ins.rows[0]?.id ?? '', name, mime, sizeBytes: bytes.length };
+          return { id: ins.rows[0]?.id ?? '', name, mime, sizeBytes: stored.length };
         } catch (err) {
           await this.storage.remove(key); // no orphan file when the row could not be written
           throw err;
