@@ -11,6 +11,8 @@ import {
 } from './helpers';
 
 test.describe('acceptance #3 — a customer writes, support answers, the customer sees it live', () => {
+  test.describe.configure({ timeout: 180_000 }); // two browser contexts + two sign-ins: WebKit/Firefox on CI need more than 60 s
+
   test('customer creates a ticket with an attachment; an agent replies; the customer sees the reply WITHOUT reloading', async ({
     browser,
     baseURL,
@@ -60,7 +62,9 @@ test.describe('acceptance #3 — a customer writes, support answers, the custome
       { timeout: 15_000 },
     );
     await expect(customer.getByText('Open', { exact: true }).first()).toBeVisible(); // new → open by the rules
-    await expect(customer.getByTestId('live-polite')).toContainText('New message in ticket');
+    await expect(customer.getByTestId('live-polite')).toContainText(
+      'There is a new reply from support',
+    );
     expect(problems.filter((p) => /hydrat|did not match/i.test(p))).toEqual([]);
     await customerCtx.close();
     await agentCtx.close();

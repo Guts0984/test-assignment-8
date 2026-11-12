@@ -50,7 +50,18 @@
     "submit": "Sign in",
     "submitting": "Signing in…",
     "signedIn": "Signed in as {name}",
-    "signedOut": "You have been signed out"
+    "signedOut": "You have been signed out",
+    "demo": {
+      "title": "Demo accounts",
+      "hint": "All accounts are test data and the passwords are public. Press “Fill in” to complete the form.",
+      "lead": "Lead — sees everything, configures SLA and templates",
+      "agents": "Agents — each works with their own categories",
+      "customers": "Customers — see only their own tickets (there are 200: customer001 … customer200)",
+      "fill": "Fill in",
+      "fillAria": "Fill in {email}",
+      "password": "password",
+      "filled": "Credentials of {email} were filled into the form"
+    }
   },
   "errors": {
     "invalidCredentials": "Wrong email or password.",

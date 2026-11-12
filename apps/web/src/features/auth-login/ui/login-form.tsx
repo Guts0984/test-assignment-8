@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -16,7 +16,13 @@ import { Input } from '@/shared/ui/input';
 
 type Values = z.input<typeof loginSchema>;
 
-export const LoginForm = ({ onSuccess }: { onSuccess?: (user: Me) => void }) => {
+export const LoginForm = ({
+  onSuccess,
+  prefill,
+}: {
+  onSuccess?: (user: Me) => void;
+  prefill?: { email: string; password: string; nonce: number } | null;
+}) => {
   const t = useTranslations('auth');
   const te = useTranslations('errors');
   const router = useRouter();
@@ -25,11 +31,22 @@ export const LoginForm = ({ onSuccess }: { onSuccess?: (user: Me) => void }) => 
   const {
     register,
     handleSubmit,
+    setValue,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodFormResolver(loginSchema),
     defaultValues: { email: '', password: '' },
   });
+
+  // the demo-accounts panel fills the form (nonce: picking the same account twice still refills it)
+  useEffect(() => {
+    if (!prefill) return;
+    setValue('email', prefill.email, { shouldDirty: true });
+    setValue('password', prefill.password, { shouldDirty: true });
+    clearErrors();
+    setServerError(null);
+  }, [prefill, setValue, clearErrors]);
 
   const submit = handleSubmit(async (values) => {
     setServerError(null);
