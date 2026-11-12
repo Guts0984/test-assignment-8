@@ -3,6 +3,7 @@ on: [push, pull_request]
 
 jobs:
   check:
+    name: lint · typecheck · unit/integration · build
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -32,4 +33,41 @@ jobs:
       - run: pnpm db:check-drift
       # full output on purpose: when a test fails, the log must say which one
       - run: pnpm test:verbose
-  # Later blocks add: api integration + hostile-client suite, web unit, e2e on the compose stack.
+
+  # One job per browser: they run in parallel and fail independently.
+  e2e:
+    name: e2e (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm --loglevel=info install --frozen-lockfile
+      - name: Start the stack (the only manual step of the project is this copy)
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait
+      - name: Install ${{ matrix.browser }}
+        run: pnpm --filter @helpdesk/e2e exec playwright install --with-deps ${{ matrix.browser }}
+      - name: Run the e2e suite in ${{ matrix.browser }}
+        run: pnpm --loglevel=info --filter @helpdesk/e2e exec playwright test --project=${{ matrix.browser }}
+      - name: Collect logs
+        if: failure()
+        run: docker compose logs --no-color > compose.log || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-${{ matrix.browser }}
+          path: |
+            apps/e2e/playwright-report
+            apps/e2e/test-results
+            compose.log
+          retention-days: 7
+      - if: always()
+        run: docker compose down -v

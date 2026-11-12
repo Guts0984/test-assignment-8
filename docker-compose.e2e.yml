@@ -1,0 +1,13 @@
+# Used by the Playwright suite:  docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait
+# A small seed (fast boot) and generous limits: the tests log in dozens of times from one address.
+services:
+  api:
+    environment:
+      SEED_TICKETS: '400'
+      SEED_CUSTOMERS: '20'
+      RATE_LIMIT_API_PER_MIN: '1000000'
+      RATE_LIMIT_USER_PER_MIN: '1000000'
+      LOGIN_IP_MAX_FAILURES: '10000'
+      LOGIN_PAIR_MAX_FAILURES: '1000'
+      SSE_MAX_PER_USER: '50'
+      SSE_MAX_PER_IP: '500'
