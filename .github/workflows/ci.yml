@@ -28,5 +28,6 @@ jobs:
       - run: pnpm typecheck
       # schema.ts and the committed migrations must not drift apart
       - run: pnpm db:check-drift
-      - run: pnpm test
+      # full output on purpose: when a test fails, the log must say which one
+      - run: pnpm test:verbose
   # Later blocks add: api integration + hostile-client suite, web unit, e2e on the compose stack.

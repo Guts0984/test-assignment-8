@@ -24,6 +24,7 @@ const outDir = mkdtempSync(path.join(tmpdir(), 'helpdesk-tests-'));
 let passed = 0;
 let failed = 0;
 let skipped = 0;
+const failures = [];
 
 for (const dir of packages) {
   const manifest = path.join(dir, 'package.json');
@@ -39,6 +40,14 @@ for (const dir of packages) {
   const report = JSON.parse(readFileSync(outputFile, 'utf8'));
   passed += report.numPassedTests ?? 0;
   failed += report.numFailedTests ?? 0;
+  for (const file of report.testResults ?? []) {
+    for (const a of file.assertionResults ?? []) {
+      if (a.status === 'failed')
+        failures.push(
+          `${path.basename(file.name)} > ${a.fullName}\n      ${String(a.failureMessages?.[0] ?? '').split('\n')[0]}`,
+        );
+    }
+  }
   skipped += (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0);
   // a test FILE that failed to load/set up (e.g. database not running) has no failed test, but is a failure
   for (const file of report.testResults ?? []) {
@@ -52,6 +61,8 @@ for (const dir of packages) {
 
 const total = passed + failed + skipped;
 const hint = failed > 0 ? '  (details: pnpm test:verbose)' : '';
+// the summary stays ONE line; only when something FAILED do the failing test names precede it (so CI logs are actionable)
+for (const f of failures) console.error(`  FAILED ${f}`);
 console.log(
   `Tests: ${total} total | ${passed} passed | ${failed} failed${skipped ? ` | ${skipped} skipped` : ''}${hint}`,
 );
