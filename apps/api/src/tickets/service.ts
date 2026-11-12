@@ -219,8 +219,35 @@ export const postMessage = async (
       )
     ).rows[0];
     if (prior) {
-      if (prior.ticket_id !== ticketId || prior.body !== input.body || prior.kind !== input.kind) {
+      if (prior.body !== input.body || prior.kind !== input.kind) {
         throw appError(409, 'conflict', 'This message id was already used with different content');
+      }
+      if (prior.ticket_id !== ticketId) {
+        // the first attempt answered a CLOSED ticket: it spawned a linked ticket that carries this message id;
+        // a retry returns that same ticket instead of a false conflict
+        const spawned = (
+          await tx.execute<{ id: string }>(
+            sql`SELECT id FROM tickets WHERE id = ${prior.ticket_id} AND linked_ticket_id = ${ticketId}`,
+          )
+        ).rows[0];
+        if (!spawned)
+          throw appError(
+            409,
+            'conflict',
+            'This message id was already used with different content',
+          );
+        const fresh = await fetchTicket(tx, user, spawned.id);
+        const first = (await loadMessages(tx, spawned.id, false))[0];
+        if (!fresh || !first) throw new Error('replayed spawned ticket not readable');
+        return {
+          created: false,
+          result: {
+            message: first,
+            ticket: toTicketDto(fresh, user.role),
+            replayed: true,
+            spawnedFrom: row.id,
+          },
+        };
       }
       const msg = (await loadMessages(tx, ticketId, isStaff(user.role))).find(
         (m) => m.id === prior.id,

@@ -31,6 +31,8 @@ describe('malicious client vs. real server', () => {
       RATE_LIMIT_USER_PER_MIN: '1000',
       LOGIN_IP_MAX_FAILURES: '10',
       LOGIN_PAIR_MAX_FAILURES: '5',
+      LOGIN_IP_HARD_MAX_FAILURES: '40',
+      LOGIN_PAIR_HARD_MAX_FAILURES: '12',
       LOGIN_MAX_CONCURRENCY: '2',
       LOGIN_QUEUE_MAX: '4',
       HEADERS_TIMEOUT_MS: '1500',
@@ -114,17 +116,37 @@ describe('malicious client vs. real server', () => {
   });
 
   describe('login attacks', () => {
-    it('brute force: 5 wrong guesses lock THAT attacker out of THAT account — but the victim, from another address, can still log in', async () => {
+    it('brute force: after 5 wrong guesses further WRONG guesses from that address get 429 — the victim from another address is unaffected', async () => {
       const attacker = '127.0.0.10';
       const statuses: number[] = [];
       for (let i = 0; i < 5; i += 1)
         statuses.push((await login(api, u.customer.email, `guess-${i}`, attacker)).status);
       expect(statuses).toEqual([401, 401, 401, 401, 401]);
-      // even the CORRECT password is refused for the attacker now (no free oracle after the budget)
-      const blocked = await login(api, u.customer.email, PASSWORDS.customer, attacker);
-      expect(blocked.status).toBe(429);
-      expect(blocked.headers['retry-after']).toBeDefined();
+      const throttled = await login(api, u.customer.email, 'guess-6', attacker);
+      expect(throttled.status).toBe(429);
+      expect(throttled.headers['retry-after']).toBeDefined();
       await victimLogsIn('127.0.0.11');
+    });
+
+    it('a victim behind the SAME address as the attacker still signs in with the right password (5 wrong guesses at the account)', async () => {
+      const shared = '127.0.0.30';
+      for (let i = 0; i < 5; i += 1) await login(api, u.customer.email, `guess-${i}`, shared);
+      await victimLogsIn(shared);
+    });
+
+    it('a victim behind the SAME address as the attacker still signs in after 20 wrong guesses at other accounts', async () => {
+      const shared = '127.0.0.31';
+      for (let i = 0; i < 20; i += 1) await login(api, `other${i}@t.test`, 'Password1!', shared);
+      await victimLogsIn(shared);
+    });
+
+    it('the HARD cap still bounds guessing: past it even the correct password is refused unchecked', async () => {
+      const attacker = '127.0.0.32';
+      for (let i = 0; i < 12; i += 1) await login(api, u.customer.email, `guess-${i}`, attacker);
+      const refused = await login(api, u.customer.email, PASSWORDS.customer, attacker);
+      expect(refused.status).toBe(429);
+      expect(refused.headers['retry-after']).toBeDefined();
+      await victimLogsIn('127.0.0.33');
     });
 
     it('credential stuffing: exactly 10 attempts per address, then 429 for every account', async () => {
@@ -134,7 +156,8 @@ describe('malicious client vs. real server', () => {
         statuses.push((await login(api, `victim${i}@t.test`, 'Password1!', attacker)).status);
       expect(statuses.filter((s) => s === 401)).toHaveLength(10);
       expect(statuses.filter((s) => s === 429)).toHaveLength(15);
-      expect((await login(api, u.agent.email, PASSWORDS.agent, attacker)).status).toBe(429);
+      // past the soft limit only WRONG guesses are throttled; the owner of a right password is not locked out
+      expect((await login(api, u.agent.email, PASSWORDS.agent, attacker)).status).toBe(200);
       await victimLogsIn('127.0.0.13');
     });
 

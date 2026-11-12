@@ -16,7 +16,7 @@ import { fetchTicket } from '../tickets/mutate';
 import { isStaff } from '../tickets/model';
 import { TOKENS } from '../tokens';
 import { readSingleFile } from './multipart';
-import { contentDisposition, sanitizeFilename, sniffMime } from './sniff';
+import { contentDisposition, nameForMime, sanitizeFilename, sniffMime } from './sniff';
 import type { Storage } from './storage';
 
 const user = (req: Request): SessionUser => {
@@ -79,7 +79,13 @@ export class AttachmentsController {
             'unsupported_media_type',
             'Only images, PDF and plain-text files are allowed',
           );
-        const name = sanitizeFilename(filename);
+        const name = nameForMime(sanitizeFilename(filename), mime);
+        if (!name)
+          throw appError(
+            415,
+            'unsupported_media_type',
+            'The file extension does not match the file content',
+          );
         const key = await this.storage.save(bytes);
         try {
           const ins = await this.db.db.execute<{ id: string }>(sql`

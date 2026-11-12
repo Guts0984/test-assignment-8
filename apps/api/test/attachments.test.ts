@@ -126,28 +126,50 @@ describe('attachments (real server, real PostgreSQL, real disk)', () => {
       expect(r.status, r.text).toBe(201);
       expect(r.json).toMatchObject({ name, mime, sizeBytes: FILES[k].length });
     });
-    it('the type comes from the CONTENT: a PNG named .exe is a PNG; an .exe named .png is refused', async () => {
-      expect(
-        (
-          (
-            await upload(api, customer, {
-              name: 'totally-not.exe',
-              data: FILES.png,
-              contentType: 'application/x-msdownload',
-            })
-          ).json as { mime: string }
-        ).mime,
-      ).toBe('image/png');
-      const before = await rows();
+    it('the type comes from the CONTENT and the name must agree: an .exe named .png is refused, a PNG named .exe is refused too', async () => {
       const bad = await upload(api, customer, {
+        name: 'totally-not.exe',
+        data: FILES.png,
+        contentType: 'application/x-msdownload',
+      });
+      expect(bad.status).toBe(415);
+      const before = await rows();
+      const bad2 = await upload(api, customer, {
         name: 'holiday.png',
         data: FILES.exe,
         contentType: 'image/png',
       });
-      expect(bad.status).toBe(415);
-      expect(bad.json).toMatchObject({ error: { code: 'unsupported_media_type' } });
+      expect(bad2.status).toBe(415);
+      expect(bad2.json).toMatchObject({ error: { code: 'unsupported_media_type' } });
       expect(await rows()).toBe(before);
       expect(allOnDisk().length).toBe(filesOnDisk().length); // and nothing half-written is left behind
+    });
+    it('a valid signature glued to executable bytes is refused: PNG header + PE, %PDF- prefix + PE, PNG with a payload after IEND', async () => {
+      const pe = FILES.exe;
+      const cases: Array<[string, string, Buffer]> = [
+        ['png+pe', 'x.png', Buffer.concat([FILES.png.subarray(0, 8), pe])],
+        ['pdf+pe', 'x.pdf', Buffer.concat([Buffer.from('%PDF-1.7\n'), pe])],
+        ['png+trailer', 'x.png', Buffer.concat([FILES.png, pe])],
+        ['gif header only', 'x.gif', Buffer.concat([Buffer.from('GIF89a'), pe])],
+        ['jpeg header + pe', 'x.jpg', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), pe])],
+      ];
+      const before = await rows();
+      for (const [label, name, data] of cases) {
+        const r = await upload(api, customer, { name, data });
+        expect(r.status, label).toBe(415);
+      }
+      expect(await rows()).toBe(before);
+    });
+    it('the name must agree with the content: run.bat / a.html / evil.exe are refused, a name without extension gets one', async () => {
+      for (const name of ['run.bat', 'a.html', 'evil.exe', 'x.png']) {
+        const r = await upload(api, customer, { name, data: Buffer.from('echo hello\n') });
+        expect(r.status, name).toBe(415);
+      }
+      const noExt = await upload(api, customer, { name: 'screenshot', data: FILES.png });
+      expect(noExt.status).toBe(201);
+      expect((noExt.json as { name: string }).name).toBe('screenshot.png');
+      const upper = await upload(api, customer, { name: 'PHOTO.JPG', data: FILES.jpeg });
+      expect(upper.status).toBe(201);
     });
     it.each(['elf', 'zip', 'shell'] as const)(
       '%s is refused even with a friendly name and content type',
@@ -160,10 +182,16 @@ describe('attachments (real server, real PostgreSQL, real disk)', () => {
         expect(r.status).toBe(415);
       },
     );
-    it('HTML/SVG uploads are stored as text/plain and served as inert downloads (they can never run in the browser)', async () => {
+    it('named .html/.svg they are refused; as .txt, HTML/SVG is stored as text/plain and served as an inert download', async () => {
       for (const [name, data] of [
         ['page.html', FILES.html],
         ['pic.svg', FILES.svg],
+      ] as const) {
+        expect((await upload(api, customer, { name, data })).status, name).toBe(415);
+      }
+      for (const [name, data] of [
+        ['page.txt', FILES.html],
+        ['pic.txt', FILES.svg],
       ] as const) {
         const up = await upload(api, customer, { name, data, contentType: 'text/html' });
         expect(up.status).toBe(201);
@@ -337,7 +365,7 @@ describe('attachments (real server, real PostgreSQL, real disk)', () => {
       'x'.repeat(400) + '.png',
       '.htaccess',
       'con.png',
-      '‮gnp.exe',
+      '‮gnp.png', // RLO cannot disguise the real extension
     ])('%j', async (name) => {
       const before = new Set(allOnDisk());
       const r = await upload(api, customer, { name, data: FILES.png });

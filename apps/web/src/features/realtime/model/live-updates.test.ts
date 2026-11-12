@@ -106,15 +106,24 @@ describe('handleLiveEvent', () => {
     expect(qc.getQueryData(ticketKeys.list(DEFAULT_FILTERS, ME))).toBe(before);
   });
 
-  it('message.created refreshes the open conversation and announces; notification.created refreshes the bell and announces', async () => {
+  it('message.created (a reply that changes NO field, so no ticket.changed follows) still refreshes the open conversation AND the lists, and announces; notification.created refreshes the bell and announces', async () => {
     const { qc, announce, hooks } = setup();
     const spy = vi.spyOn(qc, 'invalidateQueries');
+    const replied = ticket(1, { version: 5, updatedAt: '2026-12-02T00:00:00Z' });
+    server.use(http.get(`${API}/tickets/${uid(1)}`, () => detailOf(replied)));
     await handleLiveEvent(
       qc,
       { type: 'message.created', ticketId: uid(1), messageId: uid(9), kind: 'public' },
       hooks,
     );
-    expect(spy).toHaveBeenCalledWith({ queryKey: ticketKeys.detail(uid(1)) });
+    expect(
+      (qc.getQueryData(ticketKeys.detail(uid(1))) as { ticket: { version: number } }).ticket
+        .version,
+    ).toBe(5);
+    const inList = qc
+      .getQueryData<TicketPages>(ticketKeys.list(DEFAULT_FILTERS, ME))!
+      .pages[0]!.items.find((t) => t.id === uid(1));
+    expect(inList?.updatedAt).toBe('2026-12-02T00:00:00Z'); // the "Updated" column / unread mark follows without a reload
     expect(announce).toHaveBeenCalledWith('new reply');
     await handleLiveEvent(
       qc,

@@ -63,6 +63,9 @@ const rawEnvSchema = z.object({
   LOGIN_WINDOW_SECONDS: int(900, 1, 86_400),
   LOGIN_IP_MAX_FAILURES: int(20, 1, 10_000),
   LOGIN_PAIR_MAX_FAILURES: int(5, 1, 1_000),
+  // hard caps: beyond them even a correct password is refused unchecked (bounds guessing on a shared address)
+  LOGIN_IP_HARD_MAX_FAILURES: int(200, 1, 100_000),
+  LOGIN_PAIR_HARD_MAX_FAILURES: int(50, 1, 10_000),
   LOGIN_MAX_CONCURRENCY: int(4, 1, 64),
   LOGIN_QUEUE_MAX: int(16, 0, 1_000),
 

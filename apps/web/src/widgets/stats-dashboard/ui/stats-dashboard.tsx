@@ -18,7 +18,7 @@ const isoDay = (ms: number) => new Date(ms).toLocaleDateString('sv-SE');
 const Metric = ({ label, value, hint }: { label: string; value: string; hint?: string }) => (
   <Card>
     <CardHeader className="pb-2">
-      <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
+      <h2 className="text-sm font-medium text-muted-foreground">{label}</h2>
     </CardHeader>
     <CardContent>
       <p className="text-3xl font-semibold tabular-nums">{value}</p>

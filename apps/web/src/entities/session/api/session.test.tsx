@@ -58,6 +58,22 @@ describe('session', () => {
     });
     expect(client.getQueryData(sessionKeys.me)).toBeNull();
   });
+  it('logout wipes the locally saved drafts (shared computer), also when the request fails; other local data stays', async () => {
+    server.use(http.post(`${API}/auth/logout`, () => HttpResponse.error()));
+    localStorage.setItem('helpdesk:draft:new-ticket', '{"subject":"SECRET private subject"}');
+    localStorage.setItem('helpdesk:draft:reply:abc', '{"body":"secret"}');
+    localStorage.setItem('unrelated', 'keep');
+    const { client, wrapper } = wrap();
+    client.setQueryData(sessionKeys.me, ME);
+    const logout = renderHook(() => useLogout(), { wrapper });
+    await act(async () => {
+      await logout.result.current.mutateAsync().catch(() => undefined);
+    });
+    expect(localStorage.getItem('helpdesk:draft:new-ticket')).toBeNull();
+    expect(localStorage.getItem('helpdesk:draft:reply:abc')).toBeNull();
+    expect(localStorage.getItem('unrelated')).toBe('keep');
+    localStorage.removeItem('unrelated');
+  });
   it('each role lands on its own home', () => {
     expect(homePathFor('customer')).toBe('/tickets');
     expect(homePathFor('agent')).toBe('/queue');

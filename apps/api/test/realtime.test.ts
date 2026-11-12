@@ -298,6 +298,29 @@ describe('realtime: SSE, presence, notifications (real server, real PostgreSQL)'
         }),
       ]);
     });
+    it("logout closes ITS streams at once (not at the next heartbeat) and leaves the same user's other session streaming", async () => {
+      const own = await startApi(t.url, { SSE_HEARTBEAT_MS: '60000' });
+      try {
+        const a1 = await signIn(own, u.agent2.email, PASSWORDS.agent);
+        const a2 = await signIn(own, u.agent2.email, PASSWORDS.agent);
+        const [s1, s2] = await Promise.all([openEvents(own, a1), openEvents(own, a2)]);
+        await settle(200);
+        const started = Date.now();
+        await request(own, { method: 'POST', path: '/auth/logout', cookie: a1.cookie });
+        await Promise.race([
+          s1.ended,
+          settle(2000).then(() => {
+            throw new Error('stream still open after logout');
+          }),
+        ]);
+        expect(Date.now() - started).toBeLessThan(1500);
+        await settle(300);
+        expect(own.logs()).not.toContain('"level":"error"');
+        s2.close();
+      } finally {
+        await own.stop();
+      }
+    });
     it('on SIGTERM open streams are closed and the server exits 0 promptly (they must not block shutdown)', async () => {
       const own = await startApi(t.url, { SHUTDOWN_TIMEOUT_MS: '8000' });
       const a = await signIn(own, u.agent.email, PASSWORDS.agent);

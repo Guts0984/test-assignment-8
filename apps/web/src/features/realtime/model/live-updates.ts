@@ -31,6 +31,22 @@ export const applyTicketToLists = (qc: QueryClient, ticket: TicketDto): void => 
   }
 };
 
+/** Fetches the fresh ticket (the server applies the viewer's permissions) and puts it into the detail and every list. */
+const refreshTicket = async (qc: QueryClient, ticketId: string): Promise<void> => {
+  try {
+    const detail = await fetchTicketDetail(ticketId);
+    qc.setQueryData(ticketKeys.detail(ticketId), detail);
+    applyTicketToLists(qc, detail.ticket);
+  } catch (err) {
+    // 404 = we lost access (or it vanished): drop it everywhere; other errors: a refetch will reconcile
+    if (isApiError(err) && err.info.status === 404) {
+      qc.removeQueries({ queryKey: ticketKeys.detail(ticketId) });
+      for (const [key, data] of cachedLists(qc))
+        if (data) qc.setQueryData(key, removeFromPages(data, ticketId));
+    } else void qc.invalidateQueries({ queryKey: ticketKeys.lists });
+  }
+};
+
 export type LiveHooks = {
   announce: (message: string) => void;
   /** localised text for an event worth announcing, or null */
@@ -49,23 +65,12 @@ export const handleLiveEvent = async (
 ): Promise<void> => {
   switch (e.type) {
     case 'ticket.created':
-    case 'ticket.changed': {
-      try {
-        const detail = await fetchTicketDetail(e.ticketId);
-        qc.setQueryData(ticketKeys.detail(e.ticketId), detail);
-        applyTicketToLists(qc, detail.ticket);
-      } catch (err) {
-        // 404 = we lost access (or it vanished): drop it everywhere; other errors: a refetch will reconcile
-        if (isApiError(err) && err.info.status === 404) {
-          qc.removeQueries({ queryKey: ticketKeys.detail(e.ticketId) });
-          for (const [key, data] of cachedLists(qc))
-            if (data) qc.setQueryData(key, removeFromPages(data, e.ticketId));
-        } else void qc.invalidateQueries({ queryKey: ticketKeys.lists });
-      }
+    case 'ticket.changed':
+      await refreshTicket(qc, e.ticketId);
       return;
-    }
     case 'message.created': {
-      await qc.invalidateQueries({ queryKey: ticketKeys.detail(e.ticketId) });
+      // a reply that changes no field emits no ticket.changed, yet the lists show its effects (unread, "updated")
+      await refreshTicket(qc, e.ticketId);
       const text = hooks.describe(e);
       if (text) hooks.announce(text);
       return;

@@ -17,18 +17,120 @@ const isPlainText = (b: Uint8Array): boolean => {
   }
 };
 
+const u32 = (b: Uint8Array, o: number): number =>
+  (((b[o] ?? 0) << 24) | ((b[o + 1] ?? 0) << 16) | ((b[o + 2] ?? 0) << 8) | (b[o + 3] ?? 0)) >>> 0;
+const le32 = (b: Uint8Array, o: number): number =>
+  ((b[o] ?? 0) | ((b[o + 1] ?? 0) << 8) | ((b[o + 2] ?? 0) << 16) | ((b[o + 3] ?? 0) << 24)) >>> 0;
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+const crc32 = (b: Uint8Array, from: number, to: number): number => {
+  let c = 0xffffffff;
+  for (let i = from; i < to; i += 1) c = (CRC_TABLE[(c ^ (b[i] ?? 0)) & 0xff] ?? 0) ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+const tag = (b: Uint8Array, o: number, s: string): boolean => startsWith(b, ascii(s), o);
+
+/** PNG: signature, then well-formed chunks (length + CRC), IHDR first, IEND LAST and nothing after it. */
+const validPng = (b: Uint8Array): boolean => {
+  let o = 8;
+  let first = true;
+  while (o + 12 <= b.length) {
+    const len = u32(b, o);
+    const end = o + 12 + len;
+    if (end > b.length) return false;
+    if (u32(b, end - 4) !== crc32(b, o + 4, o + 8 + len)) return false;
+    if (first) {
+      if (!tag(b, o + 4, 'IHDR') || len !== 13) return false;
+      first = false;
+    }
+    if (tag(b, o + 4, 'IEND')) return len === 0 && end === b.length;
+    o = end;
+  }
+  return false;
+};
+
+/** JPEG: walks the marker segments up to the scan data; ends with EOI (trailing zero padding tolerated). */
+const validJpeg = (b: Uint8Array): boolean => {
+  let end = b.length;
+  while (end > 2 && b[end - 1] === 0) end -= 1;
+  if (b[end - 2] !== 0xff || b[end - 1] !== 0xd9) return false;
+  let o = 2;
+  while (o + 2 <= end) {
+    if (b[o] !== 0xff) return false;
+    const marker = b[o + 1] ?? 0;
+    if (marker === 0xd9) return o + 2 === end;
+    if (marker === 0xda) return true; // start of scan: entropy-coded data follows (checked by the EOI above)
+    if (marker === 0xff) {
+      o += 1;
+      continue;
+    }
+    if (o + 4 > end) return false;
+    const len = ((b[o + 2] ?? 0) << 8) | (b[o + 3] ?? 0);
+    if (len < 2 || o + 2 + len > end) return false;
+    o += 2 + len;
+  }
+  return false;
+};
+
+/** GIF: header + logical screen descriptor, and the 0x3B trailer as the very last byte. */
+const validGif = (b: Uint8Array): boolean => b.length >= 14 && b[b.length - 1] === 0x3b;
+
+/** WebP: RIFF length matches the file, first chunk is a real WebP chunk that fits. */
+const validWebp = (b: Uint8Array): boolean => {
+  if (b.length < 20 || le32(b, 4) + 8 !== b.length) return false;
+  const known = ['VP8 ', 'VP8L', 'VP8X'].some((t) => tag(b, 12, t));
+  return known && 20 + le32(b, 16) <= b.length;
+};
+
+/** PDF: a version header, then startxref and %%EOF near the end. */
+const validPdf = (b: Uint8Array): boolean => {
+  const head = new TextDecoder('latin1').decode(b.subarray(0, 12));
+  if (!/^%PDF-[12]\.\d[\r\n]/.test(head)) return false;
+  const tail = new TextDecoder('latin1').decode(b.subarray(Math.max(0, b.length - 1024)));
+  return tail.includes('startxref') && /%%EOF\s*$/.test(tail);
+};
+
 /**
- * Decides the file type from its CONTENT (magic bytes), never from the name or the client's Content-Type.
+ * Decides the file type from its CONTENT, never from the name or the client's Content-Type. The signature alone is
+ * not enough (a PNG header glued to executable bytes must not pass): each format is checked structurally.
  * Anything not on the allow-list — executables, archives, HTML, SVG, scripts — returns null.
  */
 export const sniffMime = (b: Uint8Array): AllowedMime | null => {
   if (b.length === 0) return null;
-  if (startsWith(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
-  if (startsWith(b, [0xff, 0xd8, 0xff])) return 'image/jpeg';
-  if (startsWith(b, ascii('GIF87a')) || startsWith(b, ascii('GIF89a'))) return 'image/gif';
-  if (startsWith(b, ascii('RIFF')) && startsWith(b, ascii('WEBP'), 8)) return 'image/webp';
-  if (startsWith(b, ascii('%PDF-'))) return 'application/pdf';
+  if (startsWith(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    return validPng(b) ? 'image/png' : null;
+  if (startsWith(b, [0xff, 0xd8, 0xff])) return validJpeg(b) ? 'image/jpeg' : null;
+  if (startsWith(b, ascii('GIF87a')) || startsWith(b, ascii('GIF89a')))
+    return validGif(b) ? 'image/gif' : null;
+  if (startsWith(b, ascii('RIFF')) && startsWith(b, ascii('WEBP'), 8))
+    return validWebp(b) ? 'image/webp' : null;
+  if (startsWith(b, ascii('%PDF-'))) return validPdf(b) ? 'application/pdf' : null;
   return isPlainText(b) ? 'text/plain' : null;
+};
+
+/** File extensions that agree with each detected type. */
+export const EXTENSIONS: Record<AllowedMime, readonly string[]> = {
+  'image/png': ['png'],
+  'image/jpeg': ['jpg', 'jpeg', 'jfif'],
+  'image/gif': ['gif'],
+  'image/webp': ['webp'],
+  'application/pdf': ['pdf'],
+  'text/plain': ['txt', 'log', 'md', 'csv', 'tsv', 'json', 'yml', 'yaml', 'ini'],
+};
+
+/**
+ * The stored display name must agree with the content: `evil.exe` holding a PNG, or `run.bat` / `a.html` holding text,
+ * is refused (null). A name without an extension gets the canonical one.
+ */
+export const nameForMime = (name: string, mime: AllowedMime): string | null => {
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : '';
+  if (ext === '') return `${name.replace(/\.+$/, '')}.${EXTENSIONS[mime][0]}`;
+  return EXTENSIONS[mime].includes(ext) ? name : null;
 };
 
 // eslint-disable-next-line no-control-regex -- stripping control characters is the point

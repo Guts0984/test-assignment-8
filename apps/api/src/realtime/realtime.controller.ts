@@ -10,7 +10,7 @@ import type { Env } from '../env';
 import { ZodPipe } from '../http/zod.pipe';
 import { appError } from '../lib/errors';
 import { parseCookies } from '../lib/cookies';
-import { findSession, type SessionUser } from '../lib/sessions';
+import { findSession, hashToken, type SessionUser } from '../lib/sessions';
 import { emit } from '../tickets/history';
 import { fetchTicket } from '../tickets/mutate';
 import { TOKENS } from '../tokens';
@@ -52,8 +52,8 @@ export class RealtimeController {
     res.flushHeaders();
     res.write('retry: 3000\n: connected\n\n');
 
-    const conn = this.rt.add(u, req.clientKey, res);
     const token = parseCookies(req.headers.cookie).get(this.env.COOKIE_NAME);
+    const conn = this.rt.add(u, req.clientKey, res, token ? hashToken(token) : undefined);
     const heartbeat = setInterval(() => {
       // a stream must not outlive its session (logout, expiry, disabled account)
       void (token ? findSession(this.db.db, token) : Promise.resolve(null)).then(

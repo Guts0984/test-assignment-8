@@ -38,10 +38,13 @@ export const FilterBar = ({
     debounce((value: string) => onChange({ ...latest.current, q: value }, 'replace'), 300),
   );
   useEffect(() => {
-    commitSearch.current = debounce(
+    const d = debounce(
       (value: string) => onChange({ ...latest.current, q: value }, 'replace'),
       300,
     );
+    commitSearch.current = d;
+    // a pending search must never navigate after the queue is gone (the user already opened a ticket)
+    return () => d.cancel();
   }, [onChange]);
   const set = (patch: Partial<TicketFilters>) => onChange({ ...filters, ...patch });
   const active =

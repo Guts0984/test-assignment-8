@@ -441,18 +441,23 @@ export const upload = (
 };
 
 export const FILES = {
-  png: Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    Buffer.from('IHDR-fake-but-valid-magic'),
+  // minimal but REAL files: the upload check validates their structure, not just the first bytes
+  png: Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+  jpeg: Buffer.from([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x01, 0x00, 0x00, 0xff, 0xd9,
   ]),
-  jpeg: Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('JFIF-fake')]),
-  gif: Buffer.from('GIF89a-fake-gif-data'),
+  gif: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'),
   webp: Buffer.concat([
     Buffer.from('RIFF'),
     Buffer.from([0x10, 0, 0, 0]),
-    Buffer.from('WEBPVP8 fake'),
+    Buffer.from('WEBPVP8L'),
+    Buffer.from([0x04, 0, 0, 0, 0x2f, 0, 0, 0]),
   ]),
-  pdf: Buffer.from('%PDF-1.7\n%fake pdf body\n%%EOF'),
+  pdf: Buffer.from('%PDF-1.7\n1 0 obj\n<< >>\nendobj\ntrailer\n<< >>\nstartxref\n9\n%%EOF\n'),
   text: Buffer.from('Hello, звіт №1 — plain text\nline two\n'),
   exe: Buffer.concat([
     Buffer.from('MZ'),

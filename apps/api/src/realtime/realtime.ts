@@ -11,6 +11,8 @@ export type Connection = {
   user: SessionUser;
   clientKey: string;
   res: ServerResponse;
+  /** hash of the session token that opened the stream (logout closes exactly these streams) */
+  sessionId?: string;
 };
 
 type EventRow = {
@@ -236,12 +238,34 @@ export const createRealtime = (opts: {
       timer = setInterval(() => void pump(), opts.pollMs ?? 3_000);
       timer.unref();
     },
-    add: (user: SessionUser, clientKey: string, res: ServerResponse): Connection => {
-      const c: Connection = { id: nextId++, user, clientKey, res };
+    add: (
+      user: SessionUser,
+      clientKey: string,
+      res: ServerResponse,
+      sessionId?: string,
+    ): Connection => {
+      const c: Connection = {
+        id: nextId++,
+        user,
+        clientKey,
+        res,
+        ...(sessionId ? { sessionId } : {}),
+      };
       conns.set(c.id, c);
       return c;
     },
     remove: (c: Connection): void => void conns.delete(c.id),
+    /** Ends every stream opened with this session (called on logout; other instances notice at their next heartbeat). */
+    closeSession: (sessionId: string): number => {
+      let n = 0;
+      for (const c of [...conns.values()]) {
+        if (c.sessionId !== sessionId) continue;
+        conns.delete(c.id);
+        c.res.end();
+        n += 1;
+      }
+      return n;
+    },
     countFor: (userId: string): number =>
       [...conns.values()].filter((c) => c.user.id === userId).length,
     countForClient: (key: string): number =>

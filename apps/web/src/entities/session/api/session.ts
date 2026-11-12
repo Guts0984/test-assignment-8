@@ -1,4 +1,5 @@
 'use client';
+import { clearAllDrafts } from '@/shared/lib/drafts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { LoginInput, Me } from '@helpdesk/shared';
 import { api, isApiError } from '@/shared/api/client';
@@ -33,6 +34,7 @@ export const useLogout = () => {
   return useMutation({
     mutationFn: () => api.post<void>('/auth/logout'),
     onSettled: () => {
+      clearAllDrafts(); // a shared computer must not keep the previous person's half-written tickets and replies
       qc.setQueryData(sessionKeys.me, null);
       qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' }); // nothing of the previous user may stay cached
     },

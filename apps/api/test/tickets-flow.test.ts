@@ -239,6 +239,25 @@ describe('ticket lifecycle: statuses, replies, history, versions', () => {
       expect(await statusOf(old.id)).toBe('closed');
       expect((await detail(lead, old.id)).messages).toHaveLength(1); // nothing was added to the old one
     });
+    it('a RETRY of that reply (same message id) returns the same new ticket, not a conflict; changed content with the same id is a conflict', async () => {
+      const old = await fresh({ subject: 'Retry me' });
+      await force(old.id, 'closed');
+      const payload = reply('it is back, retried');
+      const first = await as(api, customer).post(`/tickets/${old.id}/messages`, payload);
+      expect(first.status).toBe(201);
+      const again = await as(api, customer).post(`/tickets/${old.id}/messages`, payload);
+      expect(again.status).toBe(200);
+      const a = first.json as { ticket: TicketJson; spawnedFrom: string | null };
+      const b = again.json as { ticket: TicketJson; spawnedFrom: string | null; replayed: boolean };
+      expect(b.ticket.id).toBe(a.ticket.id);
+      expect(b.spawnedFrom).toBe(old.id);
+      expect(b.replayed).toBe(true);
+      const changed = await as(api, customer).post(`/tickets/${old.id}/messages`, {
+        ...payload,
+        body: 'something else entirely',
+      });
+      expect(changed.status).toBe(409);
+    });
     it('the new ticket of an urgent old one is high (customers cannot create urgent)', async () => {
       const old = await fresh();
       await as(api, lead).patch(`/tickets/${old.id}`, { version: old.version, priority: 'urgent' });

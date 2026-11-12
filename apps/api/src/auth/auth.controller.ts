@@ -10,7 +10,8 @@ import { appError } from '../lib/errors';
 import { ZodPipe } from '../http/zod.pipe';
 import { clearSessionCookie, parseCookies, serializeSessionCookie } from '../lib/cookies';
 import type { Limiter } from '../lib/limiter';
-import { deleteSessionByToken, loadSessionUser } from '../lib/sessions';
+import { deleteSessionByToken, hashToken, loadSessionUser } from '../lib/sessions';
+import type { Realtime } from '../realtime/realtime';
 import type { createSemaphore } from '../lib/semaphore';
 import { Public } from './decorators';
 import { login } from './login';
@@ -23,6 +24,7 @@ export class AuthController {
     @Inject(TOKENS.ENV) private readonly env: Env,
     @Inject(TOKENS.LIMITER) private readonly limiter: Limiter,
     @Inject(TOKENS.LOGIN_GATE) private readonly gate: ReturnType<typeof createSemaphore>,
+    @Inject(TOKENS.REALTIME) private readonly rt: Realtime,
   ) {}
 
   @Public()
@@ -64,7 +66,10 @@ export class AuthController {
   @ApiOperation({ summary: 'Invalidate the current session (idempotent)' })
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
     const token = parseCookies(req.headers.cookie).get(this.env.COOKIE_NAME);
-    if (token) await deleteSessionByToken(this.db.db, token);
+    if (token) {
+      await deleteSessionByToken(this.db.db, token);
+      this.rt.closeSession(hashToken(token)); // the live stream must not outlive the session
+    }
     res.setHeader('Set-Cookie', clearSessionCookie(this.env.COOKIE_NAME, this.env.COOKIE_SECURE));
   }
 
