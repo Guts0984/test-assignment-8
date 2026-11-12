@@ -1,42 +1,125 @@
 name: ci
 on: [push, pull_request]
 
+# Every concern is its own job: they run in parallel and fail (and get re-run) independently.
+env:
+  PG_USER: helpdesk
+  PG_PASSWORD: helpdesk_ci_password
+
 jobs:
-  check:
-    name: lint · typecheck · unit/integration · build
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { build: 'true' }
+      - run: pnpm typecheck
+
+  build:
+    name: build (shared · db · api · web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+      # a real production build catches what the typechecker cannot (routes, i18n plugin, config)
+      - run: pnpm --filter @helpdesk/web build
+
+  migrations:
+    name: migrations are in sync with the schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm db:check-drift
+
+  nginx-config:
+    name: nginx config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: nginx -t (upstream names resolved to localhost)
+        run: docker run --rm --add-host web:127.0.0.1 --add-host api:127.0.0.1 -v "$PWD/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
+
+  test-shared:
+    name: tests · shared
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { build: 'true' }
+      - run: pnpm --loglevel=info --filter @helpdesk/shared test
+
+  test-web:
+    name: tests · web (unit, MSW, axe, hydration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { build: 'true' }
+      - run: pnpm --loglevel=info --filter @helpdesk/web test
+
+  test-db:
+    name: tests · db (real PostgreSQL)
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: helpdesk
-          POSTGRES_PASSWORD: helpdesk_ci_password
-          POSTGRES_DB: helpdesk
+          {
+            POSTGRES_USER: helpdesk,
+            POSTGRES_PASSWORD: helpdesk_ci_password,
+            POSTGRES_DB: helpdesk,
+          }
         ports: ['5440:5432']
         options: >-
           --health-cmd "pg_isready -U helpdesk" --health-interval 3s --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: postgres://helpdesk:helpdesk_ci_password@localhost:5440/helpdesk
       TEST_ADMIN_DATABASE_URL: postgres://helpdesk:helpdesk_ci_password@localhost:5440/postgres
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm --loglevel=info install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm lint
-      - run: pnpm typecheck
-      # a real production build catches what the typechecker cannot (routes, i18n plugin, config)
-      - run: pnpm --filter @helpdesk/web build
-      # schema.ts and the committed migrations must not drift apart
-      - run: pnpm db:check-drift
-      # full output on purpose: when a test fails, the log must say which one
-      - run: pnpm test:verbose
+      - uses: ./.github/actions/setup
+        with: { build: 'true' }
+      - run: pnpm --loglevel=info --filter @helpdesk/db test
+
+  test-api:
+    name: tests · api (real server, real PostgreSQL, attack suite, nginx layer)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          {
+            POSTGRES_USER: helpdesk,
+            POSTGRES_PASSWORD: helpdesk_ci_password,
+            POSTGRES_DB: helpdesk,
+          }
+        ports: ['5440:5432']
+        options: >-
+          --health-cmd "pg_isready -U helpdesk" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      TEST_ADMIN_DATABASE_URL: postgres://helpdesk:helpdesk_ci_password@localhost:5440/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { build: 'true' }
+      # the nginx-layer tests run the real nginx image with host networking
+      - run: docker pull nginx:1.27-alpine
+      - run: pnpm --loglevel=info --filter @helpdesk/api test
 
   # One job per browser: they run in parallel and fail independently.
   e2e:
     name: e2e (${{ matrix.browser }})
+    needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -45,11 +128,8 @@ jobs:
         browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm --loglevel=info install --frozen-lockfile
-      - name: Start the stack (the only manual step of the project is this copy)
+      - uses: ./.github/actions/setup
+      - name: Start the stack through nginx on :8080 (the only manual step of the project is the .env copy)
         run: |
           cp .env.example .env
           docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait

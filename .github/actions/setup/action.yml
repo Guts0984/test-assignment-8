@@ -1,0 +1,17 @@
+name: setup
+description: pnpm + Node + dependencies (shared by every job)
+inputs:
+  build:
+    description: 'Build the workspace libraries (shared, db) first — needed by typecheck and the tests'
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with: { node-version: 22, cache: pnpm }
+    - run: pnpm --loglevel=info install --frozen-lockfile
+      shell: bash
+    - if: inputs.build == 'true'
+      run: pnpm --filter @helpdesk/shared build && pnpm --filter @helpdesk/db build
+      shell: bash

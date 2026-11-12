@@ -27,21 +27,27 @@ test('acceptance #7 — two staff members change one ticket: the second gets a c
   await expect(agent.getByLabel('Priority')).toBeVisible();
   await expect(lead.getByLabel('Priority')).toBeVisible();
 
-  // the lead saves first
-  await lead.getByLabel('Priority').selectOption('urgent');
-  await lead.getByRole('button', { name: 'Save changes' }).click();
-  await expect(
-    lead.getByText('Changes saved', { exact: false }).or(lead.getByLabel('Priority')),
-  ).toBeVisible();
-
-  // the agent still works on the old version: edits, then saves
+  // the agent is ALREADY editing (their form is dirty) when the lead saves — otherwise the live update would simply be followed
   await agent.getByLabel('Tags').fill('my-new-tag');
   await agent.getByLabel('Status').selectOption('pending');
+  await expect(agent.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+
+  await lead.getByLabel('Priority').selectOption('urgent');
+  await lead.getByRole('button', { name: 'Save changes' }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await aCtx.request.get(`/api/tickets/${ticket.id}`)).json()).ticket.priority,
+    )
+    .toBe('urgent');
+
+  // the agent saves on the old version → conflict; what they typed is still there
   await agent.getByRole('button', { name: 'Save changes' }).click();
   const conflict = agent.getByTestId('conflict');
   await expect(conflict).toBeVisible();
   await expect(conflict).toContainText('Someone else has changed this ticket');
-  await expect(agent.getByLabel('Tags')).toHaveValue('my-new-tag'); // what they typed is still there
+  await expect(agent.getByLabel('Tags')).toHaveValue('my-new-tag');
+  await expect(agent.getByLabel('Status')).toHaveValue('pending');
 
   // nothing was overwritten silently: the lead's priority is intact, the agent's edits were not applied
   const current = await (await aCtx.request.get(`/api/tickets/${ticket.id}`)).json();
@@ -53,6 +59,12 @@ test('acceptance #7 — two staff members change one ticket: the second gets a c
   await agent.getByRole('button', { name: 'Keep my edits on top of the current version' }).click();
   await agent.getByRole('button', { name: 'Save changes' }).click();
   await expect(agent.getByTestId('conflict')).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await (await aCtx.request.get(`/api/tickets/${ticket.id}`)).json()).ticket.status,
+    )
+    .toBe('pending');
   const after = await (await aCtx.request.get(`/api/tickets/${ticket.id}`)).json();
   expect(after.ticket).toMatchObject({ priority: 'urgent', status: 'pending' });
   expect(after.ticket.tags).toContain('my-new-tag');
@@ -113,9 +125,11 @@ test('acceptance #13 — filters live in the URL: reload and Back restore them; 
   await page.goto('/queue');
   await expect(page.getByRole('row').nth(1)).toBeVisible();
 
-  await page.getByRole('checkbox', { name: 'Open', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'Open', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Open', exact: true })).toBeChecked();
   await expect(page).toHaveURL(/status=open/);
-  await page.getByRole('checkbox', { name: 'High', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'High', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'High', exact: true })).toBeChecked();
   await expect(page).toHaveURL(/priority=high/);
   await page.reload();
   await expect(page.getByRole('checkbox', { name: 'Open', exact: true })).toBeChecked();

@@ -274,7 +274,13 @@ export const ReplyComposer = ({
             <Send aria-hidden="true" />
             {post.isPending
               ? t('ticket.reply.sending')
-              : t(note ? 'staff.composer.sendNote' : 'ticket.reply.send')}
+              : t(
+                  staff
+                    ? note
+                      ? 'staff.composer.sendNote'
+                      : 'staff.composer.send'
+                    : 'ticket.reply.send',
+                )}
           </Button>
         </div>
       </div>

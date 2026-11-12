@@ -471,7 +471,7 @@ export type SseFrame = { id: string | null; event: string; data: Record<string, 
 export const openEvents = (
   api: Pick<Api, 'port'>,
   s: Session,
-  opts: { from?: string; lastEventId?: string; cookie?: string } = {},
+  opts: { from?: string; lastEventId?: string; cookie?: string; path?: string } = {},
 ) =>
   new Promise<{
     status: number;
@@ -489,7 +489,7 @@ export const openEvents = (
       {
         host: '127.0.0.1',
         port: api.port,
-        path: '/events',
+        path: opts.path ?? '/events',
         method: 'GET',
         agent: false,
         ...(opts.from ? { localAddress: opts.from } : {}),

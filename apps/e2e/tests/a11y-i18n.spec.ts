@@ -18,44 +18,61 @@ const violations = async (page: Page) => {
 const setTheme = (page: Page, theme: 'light' | 'dark') =>
   page.addInitScript((t) => window.localStorage.setItem('theme', t), theme);
 
+const PAGES: Array<{
+  name: string;
+  as: 'anon' | 'customer' | 'lead';
+  path: (ticketId: string) => string;
+}> = [
+  { name: 'login', as: 'anon', path: () => '/login' },
+  { name: 'my tickets', as: 'customer', path: () => '/tickets' },
+  { name: 'new ticket', as: 'customer', path: () => '/tickets/new' },
+  { name: 'ticket (customer)', as: 'customer', path: (id) => `/tickets/${id}` },
+  { name: 'queue', as: 'lead', path: () => '/queue' },
+  { name: 'ticket (staff)', as: 'lead', path: (id) => `/tickets/${id}` },
+  { name: 'dashboard', as: 'lead', path: () => '/dashboard' },
+  { name: 'settings', as: 'lead', path: () => '/settings' },
+];
+
+// one test per page: a browser crash on one page no longer takes the others down, and a retry is cheap
 for (const theme of ['light', 'dark'] as const) {
   for (const locale of ['en', 'uk'] as const) {
-    test(`acceptance #17 — axe finds nothing on the main screens (${locale}, ${theme} theme), and there are no hydration errors`, async ({
-      browser,
-      baseURL,
-    }) => {
-      const origin = baseURL!;
-      const ctx = await browser.newContext({ baseURL });
-      await ctx.addCookies([{ name: 'locale', value: locale, url: origin }]);
-      const page = await ctx.newPage();
-      await setTheme(page, theme);
-      const problems = watchConsole(page);
-
-      await page.goto('/login');
-      await expect(page.locator('html')).toHaveAttribute('lang', locale);
-      expect(await violations(page), 'login').toEqual([]);
-
-      await signInApi(ctx.request, USERS.customer(12), origin);
-      const t = await createTicketApi(ctx.request, { subject: uniq('a11y') }, origin);
-      for (const path of ['/tickets', '/tickets/new', `/tickets/${t.id}`]) {
-        await page.goto(path);
+    for (const spec of PAGES) {
+      test(`acceptance #17 — axe: ${spec.name} (${locale}, ${theme}) has no violations and no hydration errors`, async ({
+        browser,
+        baseURL,
+      }) => {
+        const origin = baseURL!;
+        const ctx = await browser.newContext({ baseURL });
+        await ctx.addCookies([{ name: 'locale', value: locale, url: origin }]);
+        const page = await ctx.newPage();
+        await setTheme(page, theme);
+        const problems = watchConsole(page);
+        let ticketId = '';
+        if (spec.as !== 'anon') {
+          const customer = await browser.newContext({ baseURL });
+          await signInApi(customer.request, USERS.customer(12), origin);
+          ticketId = (await createTicketApi(customer.request, { subject: uniq('a11y') }, origin))
+            .id;
+          await customer.close();
+          await signInApi(
+            ctx.request,
+            spec.as === 'lead' ? USERS.lead : USERS.customer(12),
+            origin,
+          );
+        }
+        await page.goto(spec.path(ticketId));
+        await expect(page.locator('html')).toHaveAttribute('lang', locale);
         await expect(page.getByRole('main')).toBeVisible();
         await page.waitForLoadState('networkidle');
-        expect(await violations(page), path).toEqual([]);
-      }
-
-      await signInApi(ctx.request, USERS.lead, origin);
-      for (const path of ['/queue', `/tickets/${t.id}`, '/dashboard', '/settings']) {
-        await page.goto(path);
-        await expect(page.getByRole('main')).toBeVisible();
-        await page.waitForLoadState('networkidle');
-        expect(await violations(page), path).toEqual([]);
-      }
-      expect(
-        problems.filter((p) => /hydrat|did not match|Minified React error #(418|423|425)/i.test(p)),
-      ).toEqual([]);
-      await ctx.close();
-    });
+        expect(await violations(page), spec.name).toEqual([]);
+        expect(
+          problems.filter((p) =>
+            /hydrat|did not match|Minified React error #(418|423|425)/i.test(p),
+          ),
+        ).toEqual([]);
+        await ctx.close();
+      });
+    }
   }
 }
 

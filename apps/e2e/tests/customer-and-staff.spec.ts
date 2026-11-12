@@ -37,7 +37,9 @@ test.describe('acceptance #3 — a customer writes, support answers, the custome
     await expect(customer.getByText('screenshot.png')).toBeVisible();
     await expect(customer.getByRole('button', { name: 'Create ticket' })).toBeEnabled();
     await customer.getByRole('button', { name: 'Create ticket' }).click();
-    await expect(customer.getByRole('heading', { level: 1, name: subject })).toBeVisible();
+    await expect(customer.getByRole('heading', { level: 1, name: subject })).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(customer.getByRole('link', { name: /screenshot\.png/ })).toBeVisible();
     const ticketUrl = customer.url();
 

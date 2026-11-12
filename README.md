@@ -42,9 +42,12 @@ pnpm --filter @helpdesk/e2e exec playwright install chromium
 pnpm --filter @helpdesk/e2e exec playwright test --project=chromium
 ```
 
-CI (GitHub Actions) has one job for lint / typecheck / unit + integration tests / production build, and **one separate
-e2e job per browser** (chromium, firefox, webkit). API and database tests run against a real PostgreSQL; the security
-suite boots the real server process and attacks it (brute force, floods, spoofed headers, slowloris, CSRF, hostile input).
+CI (GitHub Actions) is split into independent jobs that run in parallel: **lint**, **typecheck**, **build** (shared · db · api · web),
+**migrations in sync with the schema**, **nginx config** (`nginx -t`), **tests · shared**, **tests · web**, **tests · db**, **tests · api**, and
+**one separate e2e job per browser** (chromium, firefox, webkit). API and database tests run against a real PostgreSQL; the security suite
+boots the real server process and attacks it (brute force, floods, spoofed headers, slowloris, CSRF, hostile input). The **nginx-layer tests**
+put the real `docker/nginx/default.conf` in front of a real API and check that every client address (device) is counted separately, that a
+spoofed `X-Forwarded-For` changes nothing, that login lock-outs are per device, and that cookies, CSRF, SSE and uploads behave through the proxy.
 
 ## Ticket statuses
 

@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { USERS, createTicketApi, signInApi, signInUi, uniq, useEnglish } from './helpers';
 
@@ -20,11 +23,9 @@ test('acceptance #14 — an .exe renamed .png and an 11 MB file are refused', as
   });
   await expect(page.getByText('Only images, PDF and text files are allowed')).toBeVisible();
 
-  await input.setInputFiles({
-    name: 'huge.txt',
-    mimeType: 'text/plain',
-    buffer: Buffer.alloc(11 * 1024 * 1024, 0x61),
-  });
+  const hugeFile = path.join(mkdtempSync(path.join(tmpdir(), 'e2e-')), 'huge.txt');
+  writeFileSync(hugeFile, Buffer.alloc(11 * 1024 * 1024, 0x61));
+  await input.setInputFiles(hugeFile);
   await expect(page.getByText('The file is larger than 10 MB')).toBeVisible();
 
   // and the server says the same to anyone who skips the UI

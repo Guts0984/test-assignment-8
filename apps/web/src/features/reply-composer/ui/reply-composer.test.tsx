@@ -75,7 +75,7 @@ describe('ReplyComposer (staff)', () => {
     staff();
     expect(screen.getByRole('radio', { name: m.modeReply })).toBeChecked();
     expect(screen.getByTestId('visibility-hint')).toHaveTextContent(m.replyHint);
-    expect(screen.getByRole('button', { name: MESSAGES.en.ticket.reply.send })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: m.send })).toBeInTheDocument();
   });
 
   it('note mode: different label, different hint, no "send and wait/resolve", and the message is sent as INTERNAL', async () => {
@@ -133,7 +133,7 @@ describe('ReplyComposer (staff)', () => {
   it('an empty or blank message cannot be sent (button disabled, shortcut ignored)', async () => {
     const user = userEvent.setup();
     staff();
-    expect(screen.getByRole('button', { name: MESSAGES.en.ticket.reply.send })).toBeDisabled();
+    expect(screen.getByRole('button', { name: m.send })).toBeDisabled();
     await user.type(box(), '   ');
     await user.keyboard('{Control>}{Enter}{/Control}');
     expect(sent).toHaveLength(0);
@@ -181,15 +181,15 @@ describe('ReplyComposer (staff)', () => {
     );
     staff();
     await user.type(box(), 'important');
-    await user.click(screen.getByRole('button', { name: MESSAGES.en.ticket.reply.send }));
+    await user.click(screen.getByRole('button', { name: m.send }));
     expect(await screen.findByTestId('send-error')).toBeInTheDocument();
     expect(box().value).toBe('important');
-    await user.click(screen.getByRole('button', { name: MESSAGES.en.ticket.reply.send }));
+    await user.click(screen.getByRole('button', { name: m.send }));
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1]?.id).toBe(sent[0]?.id);
     await waitFor(() => expect(box().value).toBe(''));
     await user.type(box(), 'next one');
-    await user.click(screen.getByRole('button', { name: MESSAGES.en.ticket.reply.send }));
+    await user.click(screen.getByRole('button', { name: m.send }));
     await waitFor(() => expect(sent).toHaveLength(3));
     expect(sent[2]?.id).not.toBe(sent[0]?.id);
   });
@@ -208,7 +208,7 @@ describe('ReplyComposer (staff)', () => {
     );
     staff();
     await user.type(box(), 'once');
-    await user.dblClick(screen.getByRole('button', { name: MESSAGES.en.ticket.reply.send }));
+    await user.dblClick(screen.getByRole('button', { name: m.send }));
     await waitFor(() => expect(box().value).toBe(''));
     expect(sent).toHaveLength(1);
   });
