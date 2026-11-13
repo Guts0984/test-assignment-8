@@ -225,6 +225,73 @@ describe('drafts (acceptance #15: reload with a half-written reply)', () => {
     expect(box().value).toBe('half-written thought');
     expect(screen.getByRole('radio', { name: m.modeNote })).toBeChecked();
   });
+  it('a RELOAD faster than the 400 ms debounce keeps the last keystrokes: pagehide / tab hidden save at once (no unmount happens on a real reload)', async () => {
+    const user = userEvent.setup();
+    staff();
+    await user.type(box(), 'typed just before the reload');
+    const key = `helpdesk:draft:reply:${ME}:${TID}`;
+    expect(window.localStorage.getItem(key)).toBeNull(); // the debounce has not fired yet
+    window.dispatchEvent(new Event('pagehide'));
+    expect(window.localStorage.getItem(key)).toContain('typed just before the reload');
+    // switching tabs / closing on mobile: visibilitychange to hidden
+    await user.type(box(), '!');
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    expect(window.localStorage.getItem(key)).toContain('before the reload!');
+  });
+  it('FILES survive a reload too: the draft remembers uploaded attachments, those the server still holds come back, expired ones do not, and Send carries them', async () => {
+    const user = userEvent.setup();
+    const kept = {
+      id: '55555555-5555-4555-8555-555555555551',
+      name: 'invoice.pdf',
+      mime: 'application/pdf',
+      sizeBytes: 1200,
+    };
+    const gone = {
+      id: '55555555-5555-4555-8555-555555555552',
+      name: 'expired.png',
+      mime: 'image/png',
+      sizeBytes: 300,
+    };
+    window.localStorage.setItem(
+      `helpdesk:draft:reply:${ME}:${TID}`,
+      JSON.stringify({
+        body: 'see the attached',
+        mode: 'reply',
+        attachments: [kept, gone, { id: 'not-a-uuid' }],
+      }),
+    );
+    // the server still holds only one of them (the other was cleaned up after 24 h)
+    server.use(http.get(`${API}/attachments/pending`, () => HttpResponse.json([kept])));
+    staff();
+    expect(box().value).toBe('see the attached');
+    expect(await screen.findByText('invoice.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('expired.png')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: m.send }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ body: 'see the attached', attachmentIds: [kept.id] });
+  });
+
+  it('a newly uploaded file is written into the draft at once (before any reload)', async () => {
+    const user = userEvent.setup();
+    const uploaded = {
+      id: '55555555-5555-4555-8555-555555555553',
+      name: 'shot.png',
+      mime: 'image/png',
+      sizeBytes: 10,
+    };
+    server.use(http.post(`${API}/attachments`, () => HttpResponse.json(uploaded, { status: 201 })));
+    staff();
+    await user.type(box(), 'with a screenshot');
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, new File([new Uint8Array(10)], 'shot.png', { type: 'image/png' }));
+    await screen.findByText('shot.png');
+    window.dispatchEvent(new Event('pagehide')); // a reload right now
+    const saved = JSON.parse(window.localStorage.getItem(`helpdesk:draft:reply:${ME}:${TID}`)!);
+    expect(saved.attachments).toEqual([uploaded]);
+  });
+
   it('another ticket and another account do not see it', async () => {
     const user = userEvent.setup();
     const first = staff();

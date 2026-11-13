@@ -34,7 +34,7 @@ const WARN_BEFORE_MS = 30 * 60_000;
  *  - entering `pending` stops the clock and stores the minutes left on each open deadline;
  *  - leaving `pending` for `open` restarts it: new deadline = now + remaining (business time for business policies);
  *  - `resolved` stamps resolved_at; reopening (resolved → open) clears it and grants a fresh resolution window
- *    (never shorter than what was left), and forgets the old resolution breach/warning;
+ *    (never shorter than what was left), keeps an earlier resolution breach on record and re-arms the warning;
  *  - `closed` stamps closed_at.
  */
 export const planStatusChange = (
@@ -84,7 +84,7 @@ export const planStatusChange = (
     const base = u.first_response_due ?? t.first_response_due;
     const keep = t.resolution_due.getTime() > fresh.getTime() ? t.resolution_due : fresh;
     u.resolution_due = keep.getTime() < base.getTime() ? base : keep;
-    u.resolution_breached_at = null;
+    // an EARLIER breach stays on record (statistics must not forget it); only the warning is re-armed for the new window
     u.resolution_warned_at = null;
   }
   return u;

@@ -1,4 +1,12 @@
-export type ReplyDraft = { body: string; mode: 'reply' | 'note'; messageId: string };
+import type { AttachmentDto } from '@helpdesk/shared';
+import { parseAttachmentRefs } from '@/features/attachments-upload/model/attachments';
+
+export type ReplyDraft = {
+  body: string;
+  mode: 'reply' | 'note';
+  messageId: string;
+  attachments: AttachmentDto[];
+};
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -16,6 +24,7 @@ export const parseReplyDraft = (raw: unknown): ReplyDraft | null => {
     mode: r.mode === 'note' ? 'note' : 'reply',
     messageId:
       typeof r.messageId === 'string' && UUID.test(r.messageId) ? r.messageId : crypto.randomUUID(),
+    attachments: parseAttachmentRefs(r.attachments),
   };
 };
 

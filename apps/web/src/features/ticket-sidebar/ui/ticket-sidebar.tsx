@@ -93,6 +93,27 @@ export const TicketSidebar = ({
   // what the server has right now, as far as we know: the newer of the live ticket and a 409's "current"
   const latest = conflict && conflict.version >= ticket.version ? conflict : ticket;
   const drift = latest.version > base.version ? remoteChanges(base, latest) : [];
+  // "your edit" is shown only for fields the user really changed; values are shown the way the screen speaks, not raw
+  const mine = new Set(diffForm(base, form));
+  const show = (f: FieldKey, v: SidebarForm[FieldKey], cur: TicketDto): string => {
+    if (v === null || v === '') return f === 'assigneeId' ? t('ticket.unassigned') : '—';
+    switch (f) {
+      case 'status':
+        return t(`status.${v}`);
+      case 'priority':
+        return t(`priority.${v}`);
+      case 'category':
+        return t(`category.${v}`);
+      case 'assigneeId':
+        return (
+          agents.find((a) => a.id === v)?.name ??
+          (cur.assignee?.id === v ? cur.assignee.name : undefined) ??
+          (ticket.assignee?.id === v ? ticket.assignee.name : String(v))
+        );
+      default:
+        return String(v);
+    }
+  };
 
   // a live update arrives: with no local edits just follow it; with edits, keep the form and show the drift
   useEffect(() => {
@@ -166,8 +187,12 @@ export const TicketSidebar = ({
             {drift.map((f) => (
               <li key={f}>
                 {t(FIELD_LABEL[f])}: {t('staff.sidebar.current')} →{' '}
-                <b>{String(toForm(latest)[f] ?? '—')}</b>; {t('staff.sidebar.yourEdit')} →{' '}
-                <b>{String(form[f] ?? '—')}</b>
+                <b>{show(f, toForm(latest)[f], latest)}</b>
+                {mine.has(f) ? (
+                  <>
+                    ; {t('staff.sidebar.yourEdit')} → <b>{show(f, form[f], latest)}</b>
+                  </>
+                ) : null}
               </li>
             ))}
           </ul>

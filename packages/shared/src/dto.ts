@@ -78,6 +78,8 @@ export const ticketEventDtoSchema = z.object({
   field: z.enum(ticketEventFieldValues),
   oldValue: z.string().nullable(),
   newValue: z.string().nullable(),
+  /** For an `assignee` event: the name of the person assigned (the stored value is their id). */
+  newValueName: z.string().nullable().optional(),
   createdAt: isoDateTimeSchema,
 });
 export type TicketEventDto = z.infer<typeof ticketEventDtoSchema>;

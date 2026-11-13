@@ -3,12 +3,18 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
-import { CATEGORIES, CUSTOMER_PRIORITIES, createTicketSchema } from '@helpdesk/shared';
+import {
+  CATEGORIES,
+  CUSTOMER_PRIORITIES,
+  createTicketSchema,
+  type AttachmentDto,
+} from '@helpdesk/shared';
 import { useCreateTicket } from '@/entities/ticket/api/tickets';
 import { useAttachments } from '@/features/attachments-upload/model/use-attachments';
 import { AttachmentPicker } from '@/features/attachments-upload/ui/attachment-picker';
 import { isApiError } from '@/shared/api/client';
 import { clearDraft, debounce, loadDraft, saveDraft } from '@/shared/lib/drafts';
+import { useFlushOnHide } from '@/shared/lib/use-flush-on-hide';
 import { describeError } from '@/shared/lib/error-message';
 import { zodFormResolver } from '@/shared/lib/form-resolver';
 import { useAnnounce } from '@/shared/ui/announcer';
@@ -37,10 +43,10 @@ export const CreateTicketForm = ({ userId }: { userId: string }) => {
   const router = useRouter();
   const announce = useAnnounce();
   const create = useCreateTicket();
-  const attachments = useAttachments();
   const key = draftKey(userId);
   // loaded once: the restored draft AND its idempotency id (a retry after a lost response must not create a duplicate)
   const initial = useMemo(() => loadDraft(key, parseNewTicketDraft), [key]);
+  const attachments = useAttachments(initial?.attachments);
   const clientMessageId = useRef(initial?.clientMessageId ?? crypto.randomUUID());
   const [serverError, setServerError] = useState<string | null>(null);
   const [restored] = useState(initial !== null);
@@ -63,17 +69,16 @@ export const CreateTicketForm = ({ userId }: { userId: string }) => {
   const watched = useWatch({ control });
   const save = useRef(
     debounce(
-      (v: Partial<Values>) => saveDraft(key, { ...v, clientMessageId: clientMessageId.current }),
+      (v: Partial<Values> & { attachments: AttachmentDto[] }) =>
+        saveDraft(key, { ...v, clientMessageId: clientMessageId.current }),
       400,
     ),
   );
+  const doneKey = attachments.done.map((a) => a.id).join(',');
   useEffect(() => {
-    save.current(watched as Partial<Values>);
-  }, [watched]);
-  useEffect(() => {
-    const s = save.current;
-    return () => s.flush();
-  }, []); // never lose the last keystrokes on navigation
+    save.current({ ...(watched as Partial<Values>), attachments: attachments.done });
+  }, [watched, doneKey]);
+  useFlushOnHide(save.current); // never lose the last keystrokes: navigation, reload, tab close
 
   const submit = handleSubmit(async (values) => {
     setServerError(null);

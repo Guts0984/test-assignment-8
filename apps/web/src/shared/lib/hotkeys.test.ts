@@ -31,16 +31,6 @@ describe('shouldHandleHotkey', () => {
     expect(shouldHandleHotkey(ev({ tag: 'tr' }))).toBe(true);
     expect(shouldHandleHotkey(ev({ key: '?' }))).toBe(true);
   });
-  it('Space belongs to a focused button / link / checkbox (it activates THAT control); on the page it is a shortcut', () => {
-    expect(shouldHandleHotkey(ev({ key: ' ' }))).toBe(true);
-    expect(shouldHandleHotkey(ev({ key: ' ', tag: 'tr' }))).toBe(true);
-    expect(shouldHandleHotkey(ev({ key: ' ', tag: 'button' }))).toBe(false);
-    expect(shouldHandleHotkey(ev({ key: ' ', tag: 'a' }))).toBe(false);
-    expect(shouldHandleHotkey(ev({ key: ' ', role: 'button' }))).toBe(false);
-    const box = Object.assign(document.createElement('input'), { type: 'checkbox' });
-    expect(shouldHandleHotkey({ ...ev({ key: ' ' }), target: box })).toBe(false);
-    expect(shouldHandleHotkey({ ...ev({ key: 'x' }), target: box })).toBe(true); // x still selects
-  });
   it('a focused CHECKBOX does not block shortcuts (clicking a row checkbox keeps focus there)', () => {
     const box = Object.assign(document.createElement('input'), { type: 'checkbox' });
     expect(

@@ -133,7 +133,7 @@ describe('resolved / closed / reopen', () => {
       iso(apply({ ...t, status: 'resolved' }, 'closed', at('2026-11-15T12:00:00Z')).closed_at),
     ).toBe('2026-11-15T12:00:00.000Z');
   });
-  it('reopening a resolved ticket gets a fresh resolution window and forgets the old resolution breach', () => {
+  it('reopening a resolved ticket gets a fresh resolution window, re-arms the warning and KEEPS the earlier breach on record', () => {
     const created = at('2026-11-02T08:00:00Z');
     const t = ticket('normal', created, {
       status: 'resolved',
@@ -145,7 +145,7 @@ describe('resolved / closed / reopen', () => {
     const now = at('2026-11-12T08:00:00Z');
     const re = apply(t, 'open', now);
     expect(re.resolved_at).toBeNull();
-    expect(re.resolution_breached_at).toBeNull();
+    expect(iso(re.resolution_breached_at)).toBe('2026-11-05T15:00:00.000Z'); // the earlier breach stays on record
     expect(re.resolution_warned_at).toBeNull();
     expect(re.resolution_due.getTime()).toBeGreaterThan(now.getTime());
     expect(businessMinutesBetween(now, re.resolution_due)).toBe(

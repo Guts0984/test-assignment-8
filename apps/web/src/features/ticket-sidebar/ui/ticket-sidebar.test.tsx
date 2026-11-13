@@ -2,7 +2,15 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { TicketDto } from '@helpdesk/shared';
-import { API, envelope, http, HttpResponse, renderApp, server } from '../../../../test/utils';
+import {
+  API,
+  MESSAGES,
+  envelope,
+  http,
+  HttpResponse,
+  renderApp,
+  server,
+} from '../../../../test/utils';
 import { ticket, uid } from '../../../../test/fixtures';
 import { diffForm, parseTags, planPatch, remoteChanges, toForm } from '../model/sidebar-model';
 import { TicketSidebar } from './ticket-sidebar';
@@ -91,6 +99,31 @@ describe('TicketSidebar: version conflicts keep what the user typed (acceptance 
     expect((screen.getByLabelText('Status') as HTMLSelectElement).value).toBe('pending'); // my edits are still there
     expect((screen.getByLabelText('Tags') as HTMLInputElement).value).toBe('vip, my-new-tag');
   });
+
+  it.each([['en' as const], ['uk' as const]])(
+    'the conflict panel speaks the interface language (no raw "urgent"/"high") and calls only REAL edits "yours" (%s)',
+    async (locale) => {
+      const user = userEvent.setup();
+      const m = MESSAGES[locale];
+      const current = ticket(1, { version: 3, priority: 'urgent' });
+      server.use(
+        http.patch(`${API}/tickets/${uid(1)}`, () =>
+          envelope(409, 'version_conflict', 'changed', { current }),
+        ),
+      );
+      renderApp(<TicketSidebar ticket={ticket(1)} role="lead" meId={uid(10)} agents={agents} />, {
+        locale,
+      });
+      // the user changes ONLY the status; somebody else changed the priority
+      await user.selectOptions(screen.getByLabelText(m.ticket.status), 'pending');
+      await user.click(screen.getByRole('button', { name: m.staff.sidebar.save }));
+      const box = await screen.findByTestId('conflict');
+      const priorityLine = within(box).getByText(new RegExp(m.ticket.priority)).closest('li')!;
+      expect(priorityLine).toHaveTextContent(m.priority.urgent); // translated, not the raw enum value
+      expect(priorityLine.textContent).not.toMatch(/\b(urgent|high|normal|low)\b/); // no raw enum values
+      expect(priorityLine).not.toHaveTextContent(m.staff.sidebar.yourEdit); // the priority was NOT touched by the user
+    },
+  );
 
   it('"keep my edits on top" re-bases on the current version: the next save is sent at THAT version and only with my own changes', async () => {
     const user = userEvent.setup();

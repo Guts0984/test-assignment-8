@@ -19,16 +19,6 @@ export const shouldHandleHotkey = (
     (tag === 'BUTTON' || tag === 'A' || el.getAttribute('role') === 'button')
   )
     return false;
-  // Space on a focused button / link / checkbox must activate THAT control (checkbox: toggle it), not our "select row" key
-  if (
-    e.key === ' ' &&
-    (tag === 'BUTTON' ||
-      tag === 'A' ||
-      inputType === 'checkbox' ||
-      inputType === 'radio' ||
-      el.getAttribute('role') === 'button')
-  )
-    return false;
   return true;
 };
 

@@ -101,6 +101,29 @@ describe('ticket lifecycle: statuses, replies, history, versions', () => {
         ).toBe(400);
       }
     });
+    it('repeating a create with the same clientMessageId returns the same ticket; the same id with a different text or subject is a 409, not a silent old ticket', async () => {
+      const payload = {
+        subject: 'Idempotent',
+        category: 'other',
+        body: 'original text',
+        clientMessageId: crypto.randomUUID(),
+      };
+      const first = await as(api, customer).post('/tickets', payload);
+      expect(first.status).toBe(201);
+      const again = await as(api, customer).post('/tickets', payload);
+      expect(again.status).toBeLessThan(300);
+      expect((again.json as TicketJson).id).toBe((first.json as TicketJson).id);
+      const otherBody = await as(api, customer).post('/tickets', {
+        ...payload,
+        body: 'edited text',
+      });
+      expect(otherBody.status).toBe(409);
+      expect(otherBody.json).toMatchObject({ error: { code: 'conflict' } });
+      expect(
+        (await as(api, customer).post('/tickets', { ...payload, subject: 'Another subject' }))
+          .status,
+      ).toBe(409);
+    });
     it('staff cannot create tickets on behalf of customers', async () => {
       expect(
         (
@@ -347,8 +370,38 @@ describe('ticket lifecycle: statuses, replies, history, versions', () => {
         actor: { id: u.lead.id },
       });
       expect(ev[1]).toMatchObject({ oldValue: null, newValue: u.agent.id });
+      const agentName = (
+        await t.db.execute<{ name: string }>(sql`SELECT name FROM users WHERE id = ${u.agent.id}`)
+      ).rows[0]!.name;
+      const named = ev as unknown as Array<{ newValueName?: string | null }>;
+      expect(named[1]!.newValueName).toBe(agentName); // the history can say WHO was assigned
+      expect(named[2]!.newValueName ?? null).toBeNull(); // only assignee events carry a name
       // the agent (payment) lost sight of the ticket when the lead moved it to delivery — but it is still assigned to them
       expect((await as(api, agent).get(`/tickets/${tk.id}`)).status).toBe(200);
+    });
+    it('a priority change that puts the ticket past a deadline tells the assignee ONCE (the background scan does not repeat it)', async () => {
+      const tk = await fresh({ priority: 'normal' });
+      await as(api, lead).patch(`/tickets/${tk.id}`, {
+        version: tk.version,
+        assigneeId: u.agent.id,
+      });
+      await t.db.execute(
+        sql`UPDATE tickets SET created_at = now() - interval '3 days' WHERE id = ${tk.id}`,
+      );
+      const v = (await detail(lead, tk.id)).ticket.version;
+      await as(api, lead).patch(`/tickets/${tk.id}`, { version: v, priority: 'urgent' }); // 1 h deadline: long gone
+      const rows = async () =>
+        (
+          await t.db.execute<{ type: string; dedupe_key: string }>(
+            sql`SELECT type, dedupe_key FROM notifications WHERE ticket_id = ${tk.id} AND type IN ('sla_breached','sla_warning') ORDER BY dedupe_key`,
+          )
+        ).rows;
+      expect((await rows()).map((r) => r.dedupe_key)).toEqual(
+        expect.arrayContaining(['first_response_breach', 'resolution_breach']),
+      );
+      // the same keys as the scan use: a scan finding the (already stamped) marks cannot notify twice
+      const keys = (await rows()).map((r) => `${r.type}:${r.dedupe_key}`);
+      expect(new Set(keys).size).toBe(keys.length);
     });
     it('a patch that changes nothing writes nothing: no version bump, no history', async () => {
       const tk = await fresh();

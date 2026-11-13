@@ -2,13 +2,19 @@
 import { Lock, Send } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { renderTemplate, type CannedResponseDto, type Role } from '@helpdesk/shared';
+import {
+  renderTemplate,
+  type AttachmentDto,
+  type CannedResponseDto,
+  type Role,
+} from '@helpdesk/shared';
 import { sendTyping, useCanned } from '@/entities/agent/api/staff';
 import { usePostMessage } from '@/entities/ticket/api/tickets';
 import { useAttachments } from '@/features/attachments-upload/model/use-attachments';
 import { AttachmentPicker } from '@/features/attachments-upload/ui/attachment-picker';
 import { isApiError } from '@/shared/api/client';
 import { clearDraft, debounce, loadDraft, saveDraft } from '@/shared/lib/drafts';
+import { useFlushOnHide } from '@/shared/lib/use-flush-on-hide';
 import { describeError } from '@/shared/lib/error-message';
 import { cn } from '@/shared/lib/cn';
 import { useAnnounce } from '@/shared/ui/announcer';
@@ -40,10 +46,10 @@ export const ReplyComposer = ({
   const announce = useAnnounce();
   const staff = role !== 'customer';
   const post = usePostMessage(ticketId);
-  const attachments = useAttachments();
   const canned = useCanned(staff);
   const key = replyDraftKey(meId, ticketId);
   const initial = useMemo(() => loadDraft(key, parseReplyDraft), [key]);
+  const attachments = useAttachments(initial?.attachments);
   const [body, setBody] = useState(initial?.body ?? '');
   const [mode, setMode] = useState<'reply' | 'note'>(initial?.mode ?? 'reply');
   const [warn, setWarn] = useState(false);
@@ -54,20 +60,18 @@ export const ReplyComposer = ({
 
   const persist = useRef(
     debounce(
-      (v: { body: string; mode: 'reply' | 'note' }) =>
+      (v: { body: string; mode: 'reply' | 'note'; attachments: AttachmentDto[] }) =>
         v.body.trim() === ''
           ? clearDraft(key)
           : saveDraft(key, { ...v, messageId: messageId.current }),
       400,
     ),
   );
+  const doneKey = attachments.done.map((a) => a.id).join(',');
   useEffect(() => {
-    persist.current({ body, mode });
-  }, [body, mode]);
-  useEffect(() => {
-    const p = persist.current;
-    return () => p.flush();
-  }, []);
+    persist.current({ body, mode, attachments: attachments.done });
+  }, [body, mode, doneKey]);
+  useFlushOnHide(persist.current);
 
   // "Now replying: Ivan": tell colleagues while typing (refreshed every 4 s), retract on leaving
   useEffect(() => {

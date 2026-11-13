@@ -117,6 +117,40 @@ describe('bulk actions, templates, saved views, SLA settings', () => {
       ).toBe(400);
     });
 
+    it('one ticket that breaks a rule (the 20-tag limit) is skipped with a reason: 200 with a full report, the others ARE applied — never a 400 after a partial change', async () => {
+      const mk = async (n: number) => {
+        const tk = await createTicketAs(api, customer, {
+          category: 'payment',
+          subject: `tags ${n}`,
+        });
+        if (n > 0) {
+          const many = Array.from({ length: n }, (_, i) => `t${i}`);
+          await t.db.execute(
+            sql`UPDATE tickets SET tags = ${`{${many.join(',')}}`}::text[] WHERE id = ${tk.id}`,
+          );
+        }
+        return tk.id;
+      };
+      const [b, a, c] = [await mk(0), await mk(19), await mk(0)] as [string, string, string];
+      const r = await bulk(agent, [b, a, c], {
+        action: 'setTags',
+        mode: 'add',
+        tags: ['x1', 'x2'],
+      });
+      expect(r.status).toBe(200);
+      expect(results(r)).toEqual([
+        { id: b, ok: true },
+        { id: a, ok: false, reason: 'invalid_value' },
+        { id: c, ok: true },
+      ]);
+      const tagsOf = async (id: string) =>
+        (await t.db.execute<{ tags: string[] }>(sql`SELECT tags FROM tickets WHERE id = ${id}`))
+          .rows[0]!.tags;
+      expect(await tagsOf(b)).toEqual(['x1', 'x2']);
+      expect(await tagsOf(a)).toHaveLength(19); // untouched
+      expect(await tagsOf(c)).toEqual(['x1', 'x2']);
+    });
+
     it('invalid status transitions are skipped with "invalid_transition", valid ones applied (per ticket)', async () => {
       const a = await createTicketAs(api, customer);
       const b = await createTicketAs(api, customer);

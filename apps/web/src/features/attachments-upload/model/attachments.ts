@@ -17,6 +17,7 @@ export type AttachmentAction =
   | { type: 'done'; key: string; attachment: AttachmentDto }
   | { type: 'error'; key: string; errorKey: NonNullable<AttachmentItem['errorKey']> }
   | { type: 'remove'; key: string }
+  | { type: 'restore'; attachments: readonly AttachmentDto[] }
   | { type: 'clear' };
 
 export const attachmentsReducer = (
@@ -40,6 +41,21 @@ export const attachmentsReducer = (
       );
     case 'remove':
       return items.filter((i) => i.key !== a.key);
+    case 'restore': {
+      // files uploaded in an earlier visit and still waiting on the server: shown as finished uploads
+      const have = new Set(items.flatMap((i) => (i.attachment ? [i.attachment.id] : [])));
+      const added: AttachmentItem[] = a.attachments
+        .filter((x) => !have.has(x.id))
+        .map((x) => ({
+          key: x.id,
+          name: x.name,
+          size: x.sizeBytes,
+          status: 'done' as const,
+          progress: 1,
+          attachment: x,
+        }));
+      return [...items, ...added].slice(0, LIMITS.attachmentsPerMessage);
+    }
     case 'clear':
       return [];
   }
@@ -68,3 +84,33 @@ export const readyIds = (items: readonly AttachmentItem[]): string[] =>
   items.flatMap((i) => (i.status === 'done' && i.attachment ? [i.attachment.id] : []));
 export const isUploading = (items: readonly AttachmentItem[]): boolean =>
   items.some((i) => i.status === 'uploading');
+
+/** The finished uploads, as they are stored in a draft. */
+export const doneAttachments = (items: readonly AttachmentItem[]): AttachmentDto[] =>
+  items.flatMap((i) => (i.status === 'done' && i.attachment ? [i.attachment] : []));
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+/** Whatever an old or corrupt draft holds → a safe list of attachment references (at most 5). */
+export const parseAttachmentRefs = (raw: unknown): AttachmentDto[] =>
+  Array.isArray(raw)
+    ? raw
+        .flatMap((x): AttachmentDto[] => {
+          if (!x || typeof x !== 'object') return [];
+          const r = x as Record<string, unknown>;
+          return typeof r.id === 'string' &&
+            UUID.test(r.id) &&
+            typeof r.name === 'string' &&
+            typeof r.mime === 'string' &&
+            typeof r.sizeBytes === 'number'
+            ? [
+                {
+                  id: r.id,
+                  name: r.name.slice(0, 200),
+                  mime: r.mime.slice(0, 100),
+                  sizeBytes: r.sizeBytes,
+                },
+              ]
+            : [];
+        })
+        .slice(0, LIMITS.attachmentsPerMessage)
+    : [];

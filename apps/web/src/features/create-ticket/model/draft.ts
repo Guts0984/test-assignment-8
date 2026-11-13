@@ -1,4 +1,10 @@
-import { CATEGORIES, CUSTOMER_PRIORITIES, type Category } from '@helpdesk/shared';
+import {
+  CATEGORIES,
+  CUSTOMER_PRIORITIES,
+  type AttachmentDto,
+  type Category,
+} from '@helpdesk/shared';
+import { parseAttachmentRefs } from '@/features/attachments-upload/model/attachments';
 
 export type NewTicketDraft = {
   subject: string;
@@ -6,6 +12,8 @@ export type NewTicketDraft = {
   priority: 'low' | 'normal' | 'high';
   body: string;
   clientMessageId: string;
+  /** files already uploaded (they wait on the server for up to 24 h) */
+  attachments: AttachmentDto[];
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,8 +36,11 @@ export const parseNewTicketDraft = (raw: unknown): NewTicketDraft | null => {
       typeof r.clientMessageId === 'string' && UUID.test(r.clientMessageId)
         ? r.clientMessageId
         : crypto.randomUUID(),
+    attachments: parseAttachmentRefs(r.attachments),
   };
-  return draft.subject.trim() === '' && draft.body.trim() === '' ? null : draft;
+  return draft.subject.trim() === '' && draft.body.trim() === '' && draft.attachments.length === 0
+    ? null
+    : draft;
 };
 
 export const draftKey = (userId: string): string => `new-ticket:${userId}`;

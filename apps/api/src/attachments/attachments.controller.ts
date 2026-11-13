@@ -116,6 +116,30 @@ export class AttachmentsController {
     }
   }
 
+  @Get('pending')
+  @ApiOperation({
+    summary:
+      'My uploaded-but-not-yet-sent files (they live 24 h): a draft that references them can check they still exist',
+  })
+  async pending(@Req() req: Request): Promise<AttachmentDto[]> {
+    const u = user(req);
+    const r = await this.db.db.execute<{
+      id: string;
+      original_name: string;
+      mime: string;
+      size_bytes: number;
+    }>(sql`
+      SELECT id, original_name, mime, size_bytes FROM attachments
+      WHERE uploader_id = ${u.id} AND message_id IS NULL
+      ORDER BY created_at, id LIMIT ${this.env.UPLOAD_MAX_PENDING}`);
+    return r.rows.map((a) => ({
+      id: a.id,
+      name: a.original_name,
+      mime: a.mime,
+      sizeBytes: Number(a.size_bytes),
+    }));
+  }
+
   @Get(':id')
   @ApiOperation({
     summary:

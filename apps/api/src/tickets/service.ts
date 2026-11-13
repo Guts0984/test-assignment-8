@@ -76,9 +76,13 @@ export const getTicketDetail = async (
           created_at: Date | string;
           actor_id: string | null;
           actor_name: string | null;
+          new_value_name: string | null;
         }>(sql`
-          SELECT e.id, e.field, e.old_value, e.new_value, e.created_at, e.actor_id, u.name AS actor_name
-          FROM ticket_events e LEFT JOIN users u ON u.id = e.actor_id
+          SELECT e.id, e.field, e.old_value, e.new_value, e.created_at, e.actor_id, u.name AS actor_name,
+                 CASE WHEN e.field = 'assignee' THEN nv.name END AS new_value_name
+          FROM ticket_events e
+          LEFT JOIN users u ON u.id = e.actor_id
+          LEFT JOIN users nv ON e.field = 'assignee' AND nv.id::text = e.new_value
           WHERE e.ticket_id = ${id} ORDER BY e.created_at, e.id`)
       ).rows.map((e) => ({
         id: Number(e.id),
@@ -86,6 +90,7 @@ export const getTicketDetail = async (
         field: e.field,
         oldValue: e.old_value,
         newValue: e.new_value,
+        newValueName: e.new_value_name,
         createdAt: toDate(e.created_at).toISOString(),
       }))
     : [];
@@ -114,16 +119,27 @@ const isUniqueViolation = (err: unknown, constraint: string): boolean => {
 const findReplay = async (
   db: Queryable,
   user: SessionUser,
-  clientMessageId: string,
+  input: CreateTicketInput,
 ): Promise<string | null> => {
-  const r = await db.execute<{ ticket_id: string; first: boolean; mine: boolean }>(sql`
-    SELECT m.ticket_id, (m.created_at = t.created_at) AS first, (t.customer_id = ${user.id}) AS mine
+  const r = await db.execute<{
+    ticket_id: string;
+    first: boolean;
+    mine: boolean;
+    body: string;
+    subject: string;
+  }>(sql`
+    SELECT m.ticket_id, (m.created_at = t.created_at) AS first, (t.customer_id = ${user.id}) AS mine,
+           m.body, t.subject
     FROM messages m JOIN tickets t ON t.id = m.ticket_id
-    WHERE m.author_id = ${user.id} AND m.client_id = ${clientMessageId}`);
+    WHERE m.author_id = ${user.id} AND m.client_id = ${input.clientMessageId}`);
   const row = r.rows[0];
   if (!row) return null;
   if (!row.first || !row.mine)
     throw appError(409, 'conflict', 'This message id was already used for something else');
+  // a repeat is the SAME request: a different text or subject under the same id is a conflict (category and priority
+  // are not compared: staff may legitimately have changed them since)
+  if (row.body !== input.body || row.subject !== input.subject)
+    throw appError(409, 'conflict', 'This message id was already used with different content');
   return row.ticket_id;
 };
 
@@ -133,7 +149,7 @@ export const createTicket = async (
   input: CreateTicketInput,
 ): Promise<{ ticket: TicketDto; replayed: boolean }> => {
   if (user.role !== 'customer') throw appError(403, 'forbidden', 'Only customers create tickets');
-  const replayOf = await findReplay(deps.db.db, user, input.clientMessageId);
+  const replayOf = await findReplay(deps.db.db, user, input);
   if (replayOf) {
     const row = await fetchTicket(deps.db.db, user, replayOf);
     if (row) return { ticket: toTicketDto(row, user.role), replayed: true };
@@ -155,7 +171,7 @@ export const createTicket = async (
     return { ticket: toTicketDto(row, user.role), replayed: false };
   } catch (err) {
     if (isUniqueViolation(err, 'messages_author_client_uq')) {
-      const again = await findReplay(deps.db.db, user, input.clientMessageId);
+      const again = await findReplay(deps.db.db, user, input);
       const row = again ? await fetchTicket(deps.db.db, user, again) : undefined;
       if (row) return { ticket: toTicketDto(row, user.role), replayed: true };
     }

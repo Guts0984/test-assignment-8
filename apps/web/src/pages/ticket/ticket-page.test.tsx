@@ -131,6 +131,22 @@ describe('ticket page — customer', () => {
     );
   });
 
+  it('a FAILED "Problem solved" shows the error on the screen (not only to a screen reader) and the button works again', async () => {
+    const user = userEvent.setup();
+    serve(CUSTOMER, detail({}, { version: 4 }));
+    server.use(
+      http.patch(`${API}/tickets/${TID}`, () => envelope(409, 'version_conflict', 'changed')),
+    );
+    show(CUSTOMER);
+    const button = await screen.findByRole('button', { name: MESSAGES.en.ticket.solved.button });
+    await user.click(button);
+    const alert = await screen.findByTestId('solved-error');
+    expect(alert).toBeVisible();
+    expect(alert).toHaveAttribute('role', 'alert'); // and it is announced too
+    expect(alert.textContent?.length).toBeGreaterThan(5);
+    expect(button).toBeEnabled();
+  });
+
   it('after the ticket is resolved the customer can rate 1–5 with a comment, once', async () => {
     const user = userEvent.setup();
     const bodies: Array<Record<string, unknown>> = [];
@@ -236,6 +252,38 @@ describe('ticket page — staff', () => {
         },
       ],
     });
+
+  it('the history says WHO was assigned (by name), and "unassigned" when nobody', async () => {
+    serve(
+      ME,
+      detail({
+        messages: [msg(1, 'public', 'My card fails', 'customer', '2026-11-11T10:00:00.000Z')],
+        events: [
+          {
+            id: 7,
+            actor: { id: ME.id, name: 'Іван Мельник' },
+            field: 'assignee',
+            oldValue: null,
+            newValue: uid(33),
+            newValueName: 'Олена Бондар',
+            createdAt: '2026-11-11T11:00:00.000Z',
+          },
+          {
+            id: 8,
+            actor: { id: ME.id, name: 'Іван Мельник' },
+            field: 'assignee',
+            oldValue: uid(33),
+            newValue: null,
+            createdAt: '2026-11-11T12:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    show(ME);
+    const list = await screen.findByRole('list', { name: 'Conversation' });
+    expect(list).toHaveTextContent('Assigned to Олена Бондар');
+    expect(list).toHaveTextContent('Unassigned');
+  });
 
   it('timeline: messages, the internal note (visually distinct and labelled) and field changes in time order; the "created" event is not duplicated', async () => {
     serve(ME, staffDetail());

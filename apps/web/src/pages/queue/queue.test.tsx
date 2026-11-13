@@ -8,6 +8,7 @@ import {
   API,
   ME,
   MESSAGES,
+  envelope,
   http,
   HttpResponse,
   makeClient,
@@ -143,6 +144,24 @@ describe('queue: filters live in the URL (acceptance #13)', () => {
   });
 });
 
+describe('queue: Take next failures are visible', () => {
+  it('an empty queue and a broken server both show a message on the screen, not only an announcement', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByText('Subject 1');
+    server.use(http.post(`${API}/tickets/take-next`, () => envelope(404, 'not_found', 'none')));
+    await user.click(screen.getByRole('button', { name: 'Take next' }));
+    expect(await screen.findByTestId('take-next-error')).toHaveTextContent(
+      MESSAGES.en.queue.queueEmpty,
+    );
+    server.use(http.post(`${API}/tickets/take-next`, () => envelope(500, 'internal_error', 'x')));
+    await user.click(screen.getByRole('button', { name: 'Take next' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('take-next-error')).toHaveTextContent(MESSAGES.en.errors.unknown),
+    );
+  });
+});
+
 describe('queue: keyboard (acceptance: j/k/Enter, / and ?)', () => {
   it('j and k move the highlighted row, Enter opens it, / focuses the search, ? opens the help (Esc closes it)', async () => {
     const user = userEvent.setup();
@@ -167,7 +186,7 @@ describe('queue: keyboard (acceptance: j/k/Enter, / and ?)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
-  it('x and Space select / unselect the highlighted row (nothing highlighted: nothing happens)', async () => {
+  it('x selects / unselects the highlighted row (nothing highlighted: nothing happens)', async () => {
     const user = userEvent.setup();
     mount();
     await screen.findByText('Subject 1');
@@ -176,10 +195,26 @@ describe('queue: keyboard (acceptance: j/k/Enter, / and ?)', () => {
     await user.keyboard('jj');
     await user.keyboard('x');
     expect(body()[1]).toHaveAttribute('aria-selected', 'true');
-    await user.keyboard(' ');
+    await user.keyboard('x');
     expect(body()[1]).toHaveAttribute('aria-selected', 'false');
-    await user.keyboard('k{ }');
-    expect(body()[0]).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Space is NOT a shortcut: it still scrolls the page (the browser default is never cancelled), with or without a highlighted row', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByText('Subject 1');
+    for (const highlighted of [false, true]) {
+      if (highlighted) await user.keyboard('j');
+      const ev = new KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        bubbles: true,
+        cancelable: true,
+      });
+      document.body.dispatchEvent(ev);
+      expect(ev.defaultPrevented, `highlighted=${highlighted}`).toBe(false);
+    }
+    expect(body().some((r) => r.getAttribute('aria-selected') === 'true')).toBe(false);
   });
 
   it('Space on a FOCUSED row checkbox toggles that checkbox only; Enter on it opens THAT row, not the highlighted one', async () => {
@@ -197,16 +232,27 @@ describe('queue: keyboard (acceptance: j/k/Enter, / and ?)', () => {
     expect(router.push).not.toHaveBeenCalledWith(`/tickets/${rows[0]?.id}`);
   });
 
-  it('after opening a ticket and coming Back (the page is rebuilt) the same ticket is highlighted again', async () => {
+  it('after opening a ticket and coming Back the same ticket is highlighted again; reaching the queue by a LINK later does not bring it back', async () => {
     const user = userEvent.setup();
     const first = mount();
     await screen.findByText('Subject 1');
     await user.keyboard('jj{Enter}');
     expect(router.push).toHaveBeenCalledWith(`/tickets/${rows[1]?.id}`);
-    first.unmount(); // navigation away...
-    mount(); // ...and Back
+    window.history.pushState({}, '', '/tickets/x'); // what router.push does: one new history entry
+    first.unmount();
+    mount(); // Back: the same history length as right after opening
     await screen.findByText('Subject 1');
     await waitFor(() => expect(body()[1]).toHaveAttribute('aria-current', 'true'));
+
+    // second round: open, then go to the queue through the "Queue" link (a NEW entry, not Back)
+    await user.keyboard('{Enter}');
+    window.history.pushState({}, '', '/tickets/x');
+    window.history.pushState({}, '', '/queue'); // the nav link
+    document.body.innerHTML = '';
+    mount();
+    await screen.findByText('Subject 1');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(body().some((r) => r.getAttribute('aria-current') === 'true')).toBe(false);
   });
 
   it('typing "j", "k", "/" or "?" into the search box does NOT trigger shortcuts', async () => {
@@ -359,6 +405,46 @@ describe('queue: live updates do not disturb the screen (acceptance: scroll and 
     expect(after[1]).toHaveAttribute('aria-current', 'true');
     expect(screen.getByRole('checkbox', { name: 'Select ticket HD-1002' })).toBeChecked();
     expect(within(after[1]!).getByText('Waiting for customer')).toBeInTheDocument();
+  });
+
+  it('tickets that leave the list (filter / live update) are dropped from the selection: the bulk bar and the request never include hidden tickets', async () => {
+    const user = userEvent.setup();
+    search.current = new URLSearchParams('status=new');
+    const { client } = mount();
+    await screen.findByText('Subject 1');
+    await user.click(screen.getByRole('checkbox', { name: 'Select ticket HD-1001' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select ticket HD-1002' }));
+    expect(await screen.findByTestId('selected-count')).toHaveTextContent('2 tickets selected');
+    // both stop matching the filter "status=new" (someone answered them) and vanish from the screen
+    act(() => {
+      applyTicketToLists(client, { ...rows[0]!, version: 2, status: 'open' });
+      applyTicketToLists(client, { ...rows[1]!, version: 2, status: 'open' });
+    });
+    await waitFor(() => expect(screen.queryByText('Subject 1')).not.toBeInTheDocument());
+    // nothing selected is visible any more, so there is nothing to apply the action to
+    expect(screen.queryByTestId('selected-count')).not.toBeInTheDocument();
+  });
+
+  it('the j/k highlight stays on the SAME ticket when a newer one arrives above it (Enter must not open the wrong one)', async () => {
+    const user = userEvent.setup();
+    const { client } = mount();
+    await screen.findByText('Subject 1');
+    await user.keyboard('jj'); // HD-1002
+    expect(body()[1]).toHaveAttribute('aria-current', 'true');
+    act(() =>
+      applyTicketToLists(
+        client,
+        ticket(99, {
+          createdAt: '2026-12-31T10:00:00.000Z',
+          updatedAt: '2026-12-31T10:00:00.000Z',
+        }),
+      ),
+    );
+    await waitFor(() => expect(body()).toHaveLength(6));
+    expect(body()[2]).toHaveAttribute('aria-current', 'true'); // moved down WITH its ticket
+    expect(body().filter((r) => r.getAttribute('aria-current') === 'true')).toHaveLength(1);
+    await user.keyboard('{Enter}');
+    expect(router.push).toHaveBeenCalledWith(`/tickets/${rows[1]?.id}`);
   });
 
   it('a new ticket that matches appears at its sorted place; one that stops matching the filter disappears', async () => {

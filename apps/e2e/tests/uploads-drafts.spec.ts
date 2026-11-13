@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { USERS, createTicketApi, signInApi, signInUi, uniq, useEnglish } from './helpers';
+import { PNG, USERS, createTicketApi, signInApi, signInUi, uniq, useEnglish } from './helpers';
 
 test('acceptance #14 — an .exe renamed .png and an 11 MB file are refused', async ({
   browser,
@@ -67,8 +67,13 @@ test('acceptance #15 — a half-written ticket and a half-written reply survive 
   await page.getByLabel('Subject').fill('Half-typed subject');
   await page.getByLabel('Category').selectOption('delivery');
   await page.getByLabel('Describe the problem').fill('and a half-typed description');
+  await page
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'draft-shot.png', mimeType: 'image/png', buffer: PNG });
+  await expect(page.getByText('draft-shot.png')).toBeVisible();
   await page.waitForTimeout(700); // the draft is saved shortly after typing stops
   await page.reload();
+  await expect(page.getByText('draft-shot.png')).toBeVisible(); // the uploaded file is still attached after the reload
   await expect(page.getByLabel('Subject')).toHaveValue('Half-typed subject');
   await expect(page.getByLabel('Category')).toHaveValue('delivery');
   await expect(page.getByLabel('Describe the problem')).toHaveValue('and a half-typed description');

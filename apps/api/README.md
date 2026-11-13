@@ -111,7 +111,7 @@ Deadlines are computed at creation from `sla_policies` (editable by the lead; ap
 
 - `pending` **pauses** the clock: the remaining minutes of each open deadline are stored; leaving `pending` restarts them (`now + remaining`, in business time where the policy says so).
 - A **priority change** recomputes both deadlines **from the moment of creation** and re-derives the warned/breached marks.
-- **Reopening** a resolved ticket grants a fresh resolution window (never shorter than what was left) and clears the old resolution breach.
+- **Reopening** a resolved ticket grants a fresh resolution window (never shorter than what was left) and re-arms the warning; an earlier resolution breach stays on record (statistics do not forget it).
 - The planners are pure functions (`src/tickets/sla-plan.ts`) with fixed-date unit tests (Friday 17:00 `high`, a week in `pending`, weekends, DST…).
 
 ## Search & pagination

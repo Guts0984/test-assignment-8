@@ -268,7 +268,8 @@
         "invalid_transition": "status change not allowed",
         "closed": "the ticket is closed",
         "unchanged": "nothing to change",
-        "assignee_not_eligible": "the assignee is not eligible"
+        "assignee_not_eligible": "the assignee is not eligible",
+        "invalid_value": "the value is not valid for this ticket (e.g. too many tags)"
       },
       "chooseAction": "Choose an action",
       "chooseValue": "Choose a value",

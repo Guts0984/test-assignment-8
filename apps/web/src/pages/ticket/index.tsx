@@ -1,12 +1,18 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Me, TicketDetail } from '@helpdesk/shared';
 import { useAgents } from '@/entities/agent/api/staff';
 import { useMe } from '@/entities/session/api/session';
-import { useMarkRead, usePatchTicket, useTicketDetail } from '@/entities/ticket/api/tickets';
+import {
+  ticketKeys,
+  useMarkRead,
+  usePatchTicket,
+  useTicketDetail,
+} from '@/entities/ticket/api/tickets';
 import { PriorityBadge, StatusBadge } from '@/entities/ticket/ui/badges';
 import { RatingForm } from '@/features/rate-ticket/ui/rating-form';
 import { PresenceIndicator } from '@/features/reply-composer/ui/presence-indicator';
@@ -24,26 +30,35 @@ const SolvedButton = ({ detail }: { detail: TicketDetail }) => {
   const patch = usePatchTicket(detail.ticket.id);
   const announce = useAnnounce();
   const tr = useTranslations();
+  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
   return (
-    <Button
-      variant="outline"
-      disabled={patch.isPending}
-      onClick={async () => {
-        try {
-          await patch.mutateAsync({ version: detail.ticket.version, status: 'resolved' });
-          announce(t('done'));
-        } catch (e) {
-          announce(
-            isApiError(e)
-              ? describeError((k, v) => tr(`errors.${k}`, v), e.info)
-              : tr('errors.unknown'),
-            'assertive',
-          );
-        }
-      }}
-    >
-      {t('button')}
-    </Button>
+    <div className="grid justify-items-start gap-2">
+      <Button
+        variant="outline"
+        disabled={patch.isPending}
+        onClick={async () => {
+          setError(null);
+          try {
+            await patch.mutateAsync({ version: detail.ticket.version, status: 'resolved' });
+            announce(t('done'));
+          } catch (e) {
+            // the page held a stale version: reload the ticket so the NEXT click is sent with the current one
+            if (isApiError(e) && e.info.code === 'version_conflict')
+              void qc.invalidateQueries({ queryKey: ticketKeys.detail(detail.ticket.id) });
+            // visible, not only spoken (the Alert is announced to screen readers too)
+            setError(
+              isApiError(e)
+                ? describeError((k, v) => tr(`errors.${k}`, v), e.info)
+                : tr('errors.unknown'),
+            );
+          }
+        }}
+      >
+        {t('button')}
+      </Button>
+      {error ? <Alert data-testid="solved-error">{error}</Alert> : null}
+    </div>
   );
 };
 

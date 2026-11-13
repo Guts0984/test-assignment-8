@@ -24,6 +24,9 @@ type EventRow = {
 };
 
 const MAX_BUFFERED_BYTES = 1_000_000;
+const CUSTOMER_VISIBLE_FIELDS = new Set(['status', 'priority', 'category']);
+const LOOKBACK = 200n; // how many ids behind the newest delivered one a late-committing event may still be found
+const LOOKBACK_MINUTES = 10;
 
 /** One SSE frame. `id` lets the browser resume with Last-Event-ID. */
 const frame = (id: string, event: SseEvent): string =>
@@ -43,6 +46,9 @@ export const createRealtime = (opts: {
   const conns = new Map<number, Connection>();
   let nextId = 1;
   let lastSeen = 0n;
+  // ids are handed out when a row is INSERTED but become visible at COMMIT, so a transaction may commit after one with a
+  // higher id: look a little behind the watermark and remember what was already delivered
+  const delivered = new Set<string>();
   let listener: ReturnType<typeof createListener> | undefined;
   let timer: NodeJS.Timeout | undefined;
   let stopped = false;
@@ -65,20 +71,26 @@ export const createRealtime = (opts: {
     e: EventRow,
     number: number | undefined,
     users: Map<string, string>,
+    staff: boolean,
   ): SseEvent | null => {
     const p = e.payload;
     switch (e.type) {
       case 'ticket.created':
         return e.ticket_id ? { type: 'ticket.created', ticketId: e.ticket_id } : null;
-      case 'ticket.changed':
-        return e.ticket_id
-          ? {
-              type: 'ticket.changed',
-              ticketId: e.ticket_id,
-              ...(typeof p.version === 'number' ? { version: p.version } : {}),
-              changed: Array.isArray(p.changed) ? (p.changed as string[]) : [],
-            }
-          : null;
+      case 'ticket.changed': {
+        if (!e.ticket_id) return null;
+        const changed = Array.isArray(p.changed) ? (p.changed as string[]) : [];
+        // a customer is told WHICH visible fields changed, never that tags / assignee / SLA did. The event is still sent
+        // (with an empty list) because the ticket's VERSION moved: a page that keeps the old one would send a stale
+        // version with its next action ("Problem solved") and be refused.
+        const shown = staff ? changed : changed.filter((f) => CUSTOMER_VISIBLE_FIELDS.has(f));
+        return {
+          type: 'ticket.changed',
+          ticketId: e.ticket_id,
+          ...(typeof p.version === 'number' ? { version: p.version } : {}),
+          changed: shown,
+        };
+      }
       case 'message.created':
         return e.ticket_id && typeof p.messageId === 'string'
           ? {
@@ -167,7 +179,12 @@ export const createRealtime = (opts: {
         if (e.type === 'message.created' && e.payload.kind === 'internal' && !isStaff(c.user.role))
           continue; // internal notes: staff only
         if (e.type === 'presence' && !isStaff(c.user.role)) continue; // "who is typing" is staff-only
-        const sse = toSse(e, e.ticket_id ? numbers.get(e.ticket_id) : undefined, userNames);
+        const sse = toSse(
+          e,
+          e.ticket_id ? numbers.get(e.ticket_id) : undefined,
+          userNames,
+          isStaff(c.user.role),
+        );
         if (sse) write(c, frame(e.id, sse));
       }
     }
@@ -193,12 +210,18 @@ export const createRealtime = (opts: {
       while (again && !stopped) {
         again = false;
         try {
-          const events = await fetchEvents(lastSeen, 500);
+          const from = lastSeen > LOOKBACK ? lastSeen - LOOKBACK : 0n;
+          const fetched = await fetchEvents(from, 500 + Number(LOOKBACK), LOOKBACK_MINUTES);
+          const events = fetched.filter((e) => !delivered.has(e.id));
           if (events.length === 0) continue;
-          const last = events[events.length - 1];
-          if (last) lastSeen = BigInt(last.id);
+          for (const e of events) delivered.add(e.id);
+          const top = BigInt(fetched[fetched.length - 1]?.id ?? lastSeen);
+          if (top > lastSeen) lastSeen = top;
+          if (delivered.size > 5_000)
+            for (const id of delivered)
+              if (BigInt(id) < lastSeen - 2n * LOOKBACK) delivered.delete(id);
           await deliver(events, [...conns.values()]);
-          if (events.length === 500) again = true;
+          if (fetched.length >= 500 + Number(LOOKBACK)) again = true;
         } catch (err) {
           opts.logger.warn('realtime pump failed', {
             err: err instanceof Error ? err.message : String(err),

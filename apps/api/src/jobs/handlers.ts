@@ -142,7 +142,10 @@ export const orphanAttachments: Handler = async (ctx) => {
   let removed = 0;
   for (;;) {
     const r = await ctx.db.execute<{ storage_key: string }>(sql`
-      DELETE FROM attachments WHERE id IN (SELECT id FROM attachments WHERE message_id IS NULL AND created_at < ${cutoff} LIMIT 500)
+      -- the conditions are repeated OUTSIDE the sub-select on purpose: if a message is being sent with this file right now
+      -- (its UPDATE holds the row), PostgreSQL re-checks only the outer conditions after the wait, so the file survives
+      DELETE FROM attachments WHERE message_id IS NULL AND created_at < ${cutoff}
+        AND id IN (SELECT id FROM attachments WHERE message_id IS NULL AND created_at < ${cutoff} LIMIT 500)
       RETURNING storage_key`);
     for (const row of r.rows) await ctx.storage.remove(row.storage_key);
     removed += r.rows.length;

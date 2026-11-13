@@ -765,6 +765,45 @@ describe('attachments (real server, real PostgreSQL, real disk)', () => {
       }
     });
   });
+
+  describe('GET /attachments/pending: what a draft may restore', () => {
+    it("lists MY unsent files only: not other people's, not files already sent; anonymous is refused; /pending is not an attachment id", async () => {
+      const mine = (await upload(api, customer, { name: 'draft-a.png', data: FILES.png })).json as {
+        id: string;
+      };
+      const sent = (await upload(api, customer, { name: 'draft-b.png', data: FILES.png })).json as {
+        id: string;
+      };
+      const theirs = (await upload(api, customer2, { name: 'theirs.png', data: FILES.png }))
+        .json as {
+        id: string;
+      };
+      const made = await as(api, customer).post('/tickets', {
+        subject: 'sent with a file',
+        category: 'other',
+        body: 'see file',
+        clientMessageId: crypto.randomUUID(),
+        attachmentIds: [sent.id],
+      });
+      expect(made.status).toBe(201);
+      const r = await as(api, customer).get('/attachments/pending');
+      expect(r.status).toBe(200);
+      const ids = (r.json as Array<{ id: string }>).map((a) => a.id);
+      expect(ids).toContain(mine.id);
+      expect(ids).not.toContain(sent.id);
+      expect(ids).not.toContain(theirs.id);
+      expect(r.json).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: mine.id, name: 'draft-a.png', mime: 'image/png' }),
+        ]),
+      );
+      expect((await request(api, { path: '/attachments/pending' })).status).toBe(401);
+      // leave the shared per-user cap (tested elsewhere in this file) as it was
+      await t.db.execute(
+        sql`DELETE FROM attachments WHERE message_id IS NULL AND id IN (${mine.id}::uuid, ${theirs.id}::uuid)`,
+      );
+    });
+  });
 });
 
 const statSyncSize = (dir: string, name: string): number => statSync(`${dir}/${name}`).size;

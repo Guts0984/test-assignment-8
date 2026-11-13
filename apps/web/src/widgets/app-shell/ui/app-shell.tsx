@@ -1,11 +1,12 @@
 'use client';
 import Link from 'next/link';
+import { canOpen } from '../model/route-access';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { LogOut } from 'lucide-react';
 import type { Me } from '@helpdesk/shared';
-import { useLogout, useMe } from '@/entities/session/api/session';
+import { homePathFor, useLogout, useMe } from '@/entities/session/api/session';
 import { LiveUpdates } from '@/features/realtime/ui/live-updates';
 import { NotificationBell } from '@/features/notifications/ui/notification-bell';
 import { LocaleSwitch } from '@/features/switch-locale/ui/locale-switch';
@@ -39,11 +40,13 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
   const me = useMe();
   const logout = useLogout();
 
+  const forbidden = me.data ? !canOpen(pathname, me.data.role) : false;
   useEffect(() => {
     if (me.data === null) router.replace('/login');
-  }, [me.data, router]);
+    else if (me.data && !canOpen(pathname, me.data.role)) router.replace(homePathFor(me.data.role));
+  }, [me.data, pathname, router]);
 
-  if (me.isPending || me.data === null || me.data === undefined) {
+  if (me.isPending || me.data === null || me.data === undefined || forbidden) {
     return (
       <p role="status" className="p-8 text-muted-foreground">
         {t('common.loading')}

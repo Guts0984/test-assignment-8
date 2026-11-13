@@ -1,6 +1,7 @@
 import { mkdtempSync, readdirSync, utimesSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb } from '@helpdesk/db';
 import { createTestDb, type TestDb } from '@helpdesk/db/testing';
@@ -405,6 +406,29 @@ describe('background jobs on PostgreSQL (real database, fake clock)', () => {
       await orphanAttachments(ctxAt(T0));
       expect(await n(sql`SELECT count(*) FROM attachments WHERE id = ${kept.id}`)).toBe(1);
       expect(existsSync(path.join(dir, kept.key))).toBe(true);
+    });
+    it('a file that is being attached to a message RIGHT NOW (its UPDATE holds the row) is not deleted by a concurrent cleanup', async () => {
+      const tk = await ticket();
+      const m = (
+        await t.db.execute<{ id: string }>(
+          sql`INSERT INTO messages (ticket_id, author_id, client_id, body) VALUES (${tk}, ${customerId}, ${crypto.randomUUID()}, 'racing') RETURNING id`,
+        )
+      ).rows[0]!.id;
+      const racing = await attachment({ age: 3 * DAY }); // old enough to be cleaned up
+      const sender = new pg.Client({ connectionString: t.url });
+      await sender.connect();
+      try {
+        await sender.query('BEGIN');
+        await sender.query('UPDATE attachments SET message_id = $1 WHERE id = $2', [m, racing.id]);
+        const cleanup = orphanAttachments(ctxAt(T0)); // waits on the row lock held by the sender
+        await new Promise((r) => setTimeout(r, 400));
+        await sender.query('COMMIT'); // the message is sent; only now can the cleanup go on
+        expect(await cleanup).toMatchObject({ removed: 0 });
+      } finally {
+        await sender.end().catch(() => undefined);
+      }
+      expect(await n(sql`SELECT count(*) FROM attachments WHERE id = ${racing.id}`)).toBe(1);
+      expect(existsSync(path.join(dir, racing.key))).toBe(true);
     });
     it('tolerates files that are already gone, and runs twice without harm', async () => {
       await attachment({ age: 2 * DAY, writeFile: false });

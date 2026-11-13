@@ -42,6 +42,8 @@ pnpm --filter @helpdesk/e2e exec playwright install chromium
 pnpm --filter @helpdesk/e2e exec playwright test --project=chromium
 ```
 
+**macOS:** the API tests act as many different clients, each from its own loopback address (127.0.0.2 … 127.0.0.101) to exercise the per-address rate limits. Linux answers on all of 127.0.0.0/8; macOS only on 127.0.0.1, so tests fail with `bind EADDRNOTAVAIL 127.0.0.30` until you add the aliases once: `sudo ./scripts/macos-loopback.sh` (undo with `… remove`; they are lost at reboot).
+
 CI (GitHub Actions) is split into independent jobs that run in parallel: **lint**, **typecheck**, **build** (shared · db · api · web),
 **migrations in sync with the schema**, **nginx config** (`nginx -t`), **tests · shared**, **tests · web**, **tests · db**, **tests · api**, and
 **one separate e2e job per browser** (chromium, firefox, webkit). API and database tests run against a real PostgreSQL; the security suite
@@ -80,8 +82,8 @@ Business time = Mon–Fri 09:00–18:00 **Europe/Kyiv** (DST-aware; public holid
 The lead edits the table (it applies to new tickets and priority changes).
 
 - **`pending` pauses the clock**: the minutes left on each deadline are stored; on return the deadline is `now + remaining` (business time where the policy says so).
-- **A priority change recomputes both deadlines from the moment of creation**, then re-derives the warned/breached marks.
-- **Reopening** a resolved ticket grants a fresh resolution window (never shorter than what was left).
+- **A priority change recomputes both deadlines from the moment of creation**, then re-derives the warned/breached marks, and the assignee is told if that puts the ticket in the warning window or past a deadline. _Decision:_ this is what the assignment prescribes. It does **not** credit time the ticket already spent in `pending`, so raising the priority of a long-paused ticket can mark it breached although its running clock is short. Crediting it would need the accumulated pause time stored per ticket; that is not modelled.
+- **Reopening** a resolved ticket grants a fresh resolution window (never shorter than what was left), re-arms the warning, and keeps an earlier resolution breach on record (statistics do not forget it).
 - Example (acceptance #10): a `high` ticket created **Friday 17:00** → first reply due **Monday 12:00**, resolution **Monday 17:00**.
 - A background job warns the assignee 30 minutes before a deadline and marks breaches (exactly once).
 
@@ -113,6 +115,7 @@ configuration, over subject **and** messages). The full index table with `EXPLAI
 - **Rate limiting** is per client address (IPv6 per /64) and per (address + account) — never per account alone, so nobody can lock a victim out. Past the soft limits (`LOGIN_IP_MAX_FAILURES`, `LOGIN_PAIR_MAX_FAILURES`) only _wrong_ passwords get 429; the right password still signs in, so someone behind the same office NAT as an attacker is not locked out. Hard caps (`LOGIN_*_HARD_MAX_FAILURES`) refuse everything unchecked and bound the guessing. A _distributed_ attack on one account is limited only by hashing cost and per-address budgets; add MFA/CAPTCHA for more. `X-Forwarded-For` is trusted only from `TRUSTED_PROXIES`. In compose only nginx (fixed address `172.30.77.10`) is trusted — never whole private ranges, which would fold every LAN/VPN/Docker-host client into one bucket.
 - **TLS is required outside localhost.** The compose stack serves plain HTTP on :8080 (`COOKIE_SECURE=false`) for a local demo: the session cookie (`hd_session`, HttpOnly, SameSite=Lax) would travel in clear text on a real network. In production terminate TLS in front of nginx (it forwards `X-Forwarded-Proto`; nginx then sends HSTS), set `COOKIE_SECURE=true` and `CORS_ORIGINS=https://…`.
 - **Uploads** are checked by content, never by name: the signature and structure must be valid (PNG chunks + CRC + IEND, JPEG markers + EOI, GIF trailer, WebP RIFF length, PDF xref offsets + `/Root`), the extension must agree with the detected type (`evil.exe` holding a PNG, `run.bat`, `a.html` are refused), and **images are decoded and stored re-encoded** (sharp/libvips, ≤ 40 MP): whatever is not pixels — executables in comment blocks, text chunks, trailing data, EXIF — is dropped. PDFs are parsed (no embedded files, launch or script actions) but not rewritten, so a payload inside a compressed stream cannot be excluded; they are only ever served as attachments with `nosniff` and a sandbox CSP.
+- Drafts (new ticket, reply) keep the text **and the uploaded files**: they stay on the server for 24 h (`GET /attachments/pending`), and a restored draft shows those that are still there.
 - Logout clears local drafts and closes the account's live event streams of that session immediately.
 - One origin (nginx): cookies and the CSRF `Origin` check just work, SSE streams through with buffering off. `CORS_ORIGINS` must match the public URL (`http://localhost:8080`).
 - Averages in statistics use wall-clock time; public holidays are not modelled; SLA warnings notify the assignee only.

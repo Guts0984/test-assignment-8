@@ -19,11 +19,12 @@ import {
   server,
 } from './utils';
 
+const route = { path: '/queue' }; // the page the mocked router reports
 vi.mock('next/navigation', async () => {
   const utils = await import('./utils');
   return {
     useRouter: () => utils.router,
-    usePathname: () => '/queue',
+    usePathname: () => route.path,
     useSearchParams: () => new URLSearchParams(),
   };
 });
@@ -74,6 +75,7 @@ describe.each([['uk' as const], ['en' as const]])('accessibility (%s)', (locale)
 
   it('the signed-in shell (landmarks, nav, header controls, main) has no violations for every role', async () => {
     for (const user of [ME, CUSTOMER, { ...ME, role: 'lead' as const }]) {
+      route.path = user.role === 'customer' ? '/tickets' : '/queue'; // each role on a page it may open
       server.use(
         http.get(`${API}/me`, () => HttpResponse.json(user)),
         ...queueApi(),
@@ -90,6 +92,35 @@ describe.each([['uk' as const], ['en' as const]])('accessibility (%s)', (locale)
       expect(await audit(container), user.role).toEqual([]);
       unmount();
     }
+  });
+
+  it('a customer who opens a staff URL (/queue) is sent to their own page and never sees staff controls; the other way round too', async () => {
+    for (const [user, path, home] of [
+      [CUSTOMER, '/queue', '/tickets'],
+      [CUSTOMER, '/settings', '/tickets'],
+      [ME, '/settings', '/queue'],
+      [ME, '/tickets', '/queue'],
+    ] as const) {
+      route.path = path;
+      router.replace.mockClear();
+      server.use(
+        http.get(`${API}/me`, () => HttpResponse.json(user)),
+        ...queueApi(),
+      );
+      const { unmount } = renderApp(
+        <AppShell>
+          <p>PAGE CONTENT</p>
+        </AppShell>,
+        { locale },
+      );
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith(home));
+      expect(screen.queryByText('PAGE CONTENT')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /take next|взяти наступну/i }),
+      ).not.toBeInTheDocument();
+      unmount();
+    }
+    route.path = '/queue';
   });
 
   it('exactly one <h1> per page and the main landmark is the skip-link target', async () => {

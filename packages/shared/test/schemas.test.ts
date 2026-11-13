@@ -150,6 +150,24 @@ describe('createMessageSchema', () => {
 });
 
 describe('listTicketsQuerySchema', () => {
+  it('the tag filter is case-insensitive like the stored (lower-case) tags: ?tags=VIP, Refund finds "vip", "refund"', () => {
+    expect(listTicketsQuerySchema.parse({ tags: ' VIP, Refund ' }).tags).toEqual(['vip', 'refund']);
+  });
+  it('a date range is compared as INSTANTS: an offset that makes "from" earlier is valid, one that makes it later is not', () => {
+    // 10:00+02:00 is 08:00Z — before 09:00Z although the string sorts after it
+    expect(
+      listTicketsQuerySchema.safeParse({
+        createdFrom: '2026-11-01T10:00:00+02:00',
+        createdTo: '2026-11-01T09:00:00Z',
+      }).success,
+    ).toBe(true);
+    expect(
+      listTicketsQuerySchema.safeParse({
+        createdFrom: '2026-11-01T09:00:00Z',
+        createdTo: '2026-11-01T10:00:00+02:00',
+      }).success,
+    ).toBe(false);
+  });
   it('applies defaults', () => {
     const q = listTicketsQuerySchema.parse({});
     expect(q).toMatchObject({ sort: 'created', order: 'desc', limit: 50 });

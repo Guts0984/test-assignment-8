@@ -1,10 +1,12 @@
 'use client';
-import { useCallback, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import type { AttachmentDto } from '@helpdesk/shared';
 import { isApiError } from '@/shared/api/errors';
 import { api } from '@/shared/api/client';
 import { uploadFile } from '@/shared/api/upload';
 import {
   attachmentsReducer,
+  doneAttachments,
   isUploading,
   planFiles,
   readyIds,
@@ -12,7 +14,7 @@ import {
 } from './attachments';
 
 /** Uploads start as soon as files are chosen/dropped; each has progress and can be cancelled. */
-export const useAttachments = () => {
+export const useAttachments = (saved: readonly AttachmentDto[] = []) => {
   const [items, dispatch] = useReducer(attachmentsReducer, [] as readonly AttachmentItem[]);
   const [notice, setNotice] = useState<{ key: 'tooMany' | 'rejectedSize'; n?: number } | null>(
     null,
@@ -20,6 +22,26 @@ export const useAttachments = () => {
   const handles = useRef(new Map<string, { cancel: () => void }>());
   const itemsRef = useRef(items);
   itemsRef.current = items;
+
+  // a draft remembers files that were already uploaded: ask the server which of them still wait there (they expire
+  // after 24 h) and show those as finished uploads
+  const savedRef = useRef(saved);
+  useEffect(() => {
+    if (savedRef.current.length === 0) return undefined;
+    let alive = true;
+    api
+      .get<AttachmentDto[]>('/attachments/pending')
+      .then((pending) => {
+        if (!alive) return;
+        const still = new Set(pending.map((p) => p.id));
+        const keep = savedRef.current.filter((s) => still.has(s.id));
+        if (keep.length > 0) dispatch({ type: 'restore', attachments: keep });
+      })
+      .catch(() => undefined); // offline / expired session: the text of the draft is restored anyway
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const add = useCallback((files: readonly File[]) => {
     const plan = planFiles(itemsRef.current, files);
@@ -80,6 +102,15 @@ export const useAttachments = () => {
     setNotice(null);
   }, []);
 
-  return { items, add, remove, clear, ids: readyIds(items), uploading: isUploading(items), notice };
+  return {
+    items,
+    add,
+    remove,
+    clear,
+    ids: readyIds(items),
+    done: doneAttachments(items),
+    uploading: isUploading(items),
+    notice,
+  };
 };
 export type AttachmentsState = ReturnType<typeof useAttachments>;

@@ -33,7 +33,7 @@ const EventLine = ({ event }: { event: TicketEventDto }) => {
             ? t('staff.events.tags', { to: event.newValue || '—' })
             : event.field === 'assignee'
               ? event.newValue
-                ? t('staff.events.assigned', { name: '' }).replace(/\s+$/, '')
+                ? t('staff.events.assigned', { name: event.newValueName ?? '—' })
                 : t('staff.events.unassignedTo')
               : t('staff.events.created');
   return (

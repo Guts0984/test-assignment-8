@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import pg from 'pg';
 import { createTestDb, type TestDb } from '@helpdesk/db/testing';
 import { sql } from 'drizzle-orm';
 import {
@@ -74,6 +75,43 @@ describe('realtime: SSE, presence, notifications (real server, real PostgreSQL)'
       s.close();
     });
 
+    it('an event whose transaction COMMITS AFTER a later one (lower id, later commit) is still delivered — nothing is lost on out-of-order commits', async () => {
+      const ag = await stream(agent);
+      await settle(200);
+      const tk = await createTicketAs(api, customer, {
+        category: 'payment',
+        subject: 'order test',
+      });
+      await ag.waitFor((f) => f.event === 'ticket.created' && f.data.ticketId === tk.id);
+      const a = new pg.Client({ connectionString: t.url });
+      const b = new pg.Client({ connectionString: t.url });
+      await Promise.all([a.connect(), b.connect()]);
+      const ins = (c: pg.Client, version: number) =>
+        c.query(
+          `INSERT INTO event_log (type, ticket_id, payload) VALUES ('ticket.changed', $1, $2::jsonb) RETURNING id`,
+          [tk.id, JSON.stringify({ version, changed: ['status'] })],
+        );
+      try {
+        await a.query('BEGIN');
+        const first = await ins(a, 901); // takes the LOWER id, stays uncommitted
+        await b.query('BEGIN');
+        const second = await ins(b, 902);
+        expect(Number(first.rows[0].id)).toBeLessThan(Number(second.rows[0].id));
+        await b.query('COMMIT'); // the higher id becomes visible first and is delivered
+        await ag.waitFor((f) => f.event === 'ticket.changed' && f.data.version === 902);
+        await a.query('COMMIT'); // the lower id commits afterwards
+        await ag.waitFor((f) => f.event === 'ticket.changed' && f.data.version === 901); // not lost
+        const seen = ag.frames.filter(
+          (f) => f.event === 'ticket.changed' && [901, 902].includes(Number(f.data.version)),
+        );
+        expect(seen).toHaveLength(2); // and delivered exactly once each
+      } finally {
+        await a.end().catch(() => undefined);
+        await b.end().catch(() => undefined);
+        ag.close();
+      }
+    });
+
     it('delivers new messages and ticket changes to everyone who may see the ticket — and only them', async () => {
       const [cust, cust2, ag, ag2, ld] = await Promise.all([
         stream(customer),
@@ -128,6 +166,42 @@ describe('realtime: SSE, presence, notifications (real server, real PostgreSQL)'
       expect(has(cust, 'message.created', (d) => d.kind === 'internal')).toBe(false);
       cust.close();
       ag.close();
+    });
+
+    it('a customer learns every new VERSION of their ticket but only the visible fields that changed (never tags, assignee or SLA)', async () => {
+      const cust = await stream(customer);
+      const lg = await stream(lead);
+      const tk = await createTicketAs(api, customer, {
+        category: 'payment',
+        subject: 'staff only',
+      });
+      await lg.waitFor((f) => f.event === 'ticket.created' && f.data.ticketId === tk.id);
+      let v = tk.version;
+      const patch = async (body: object) => {
+        const r = await as(api, lead).patch(`/tickets/${tk.id}`, { version: v, ...body });
+        v = (r.json as { version: number }).version;
+        return v;
+      };
+      const tagsV = await patch({ tags: ['vip'], assigneeId: u.agent.id });
+      const priorityV = await patch({ priority: 'high', tags: ['vip', 'x'] });
+      await lg.waitFor((f) => f.event === 'ticket.changed' && f.data.version === priorityV);
+      await cust.waitFor((f) => f.event === 'ticket.changed' && f.data.version === priorityV);
+      const mine = cust.frames.filter(
+        (f) => f.event === 'ticket.changed' && f.data.ticketId === tk.id,
+      );
+      // BOTH changes reach the customer (their page must learn the new version), but only with the fields they can see
+      expect(mine.map((f) => f.data.version)).toEqual([tagsV, priorityV]);
+      expect(mine[0]!.data.changed).toEqual([]); // tags + assignee: nothing the customer can see
+      expect(mine[1]!.data.changed).toEqual(['priority']);
+      expect(cust.raw()).not.toMatch(/"tags"|"assignee"/);
+      expect(tagsV).toBeLessThan(priorityV);
+      // staff still see everything
+      const staffSaw = lg.frames.filter(
+        (f) => f.event === 'ticket.changed' && f.data.version === tagsV,
+      );
+      expect(staffSaw[0]!.data.changed).toEqual(expect.arrayContaining(['tags', 'assignee']));
+      cust.close();
+      lg.close();
     });
 
     it('notifications are personal: only the assignee is told, and the event names the ticket', async () => {

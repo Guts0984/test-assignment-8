@@ -22,18 +22,24 @@ import { TicketTable } from '@/widgets/ticket-table/ui/ticket-table';
 
 /** The staff work place: filtered, live list with selection, bulk actions, "take next" and keyboard shortcuts. */
 const CURSOR_KEY = 'helpdesk:queue-cursor';
+/**
+ * Back must return to the list with the same ticket highlighted; a LATER visit (the "Queue" link) must not. Opening a
+ * ticket pushes one history entry, so the remembered ticket is valid only while the history is exactly that long.
+ */
 const rememberCursor = (id: string): void => {
   try {
-    sessionStorage.setItem(CURSOR_KEY, id);
+    sessionStorage.setItem(CURSOR_KEY, JSON.stringify({ id, len: window.history.length + 1 }));
   } catch {
     /* storage may be unavailable: the highlight is a convenience */
   }
 };
 const takeRememberedCursor = (): string | null => {
   try {
-    const id = sessionStorage.getItem(CURSOR_KEY);
+    const raw = sessionStorage.getItem(CURSOR_KEY);
     sessionStorage.removeItem(CURSOR_KEY);
-    return id;
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { id?: string; len?: number };
+    return typeof v.id === 'string' && v.len === window.history.length ? v.id : null;
   } catch {
     return null;
   }
@@ -47,20 +53,25 @@ export const QueuePage = () => {
   const list = useTicketList(filters, me?.id ?? '');
   const items = useMemo(() => list.data?.pages.flatMap((p) => p.items) ?? [], [list.data]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [cursor, setCursor] = useState(-1);
+  // the highlight follows the TICKET, not the row number: a new ticket arriving above must not move it
+  const [cursorId, setCursorId] = useState<string | null>(null);
+  const cursor = cursorId === null ? -1 : items.findIndex((i) => i.id === cursorId);
   const [help, setHelp] = useState(false);
   const [report, setReport] = useState<BulkReport | null>(null);
 
   useEffect(() => {
     document.title = `${t('queue.title')} · ${t('app.name')}`;
   }, [t]);
-  // keep the cursor on the same TICKET when the list changes underneath it (live updates)
-  const cursorId = items[cursor]?.id;
+  // only what is on screen can be selected: tickets that left the list (search, filter, live update) are dropped, so a
+  // bulk action can never touch a ticket the user cannot see
   useEffect(() => {
-    if (cursorId === undefined) return;
-    const idx = items.findIndex((i) => i.id === cursorId);
-    if (idx !== cursor && idx !== -1) setCursor(idx);
-  }, [items, cursorId, cursor]);
+    if (!list.isSuccess || list.isFetching) return;
+    const visible = new Set(items.map((i) => i.id));
+    setSelected((s) => {
+      const kept = [...s].filter((id) => visible.has(id));
+      return kept.length === s.size ? s : new Set(kept);
+    });
+  }, [items, list.isSuccess, list.isFetching]);
 
   const open = useCallback(
     (id: string) => {
@@ -86,20 +97,15 @@ export const QueuePage = () => {
 
   // after Back the list is rebuilt: put the highlight back on the ticket that was opened
   useEffect(() => {
-    if (cursor !== -1 || items.length === 0) return;
+    if (cursorId !== null || items.length === 0) return;
     const id = takeRememberedCursor();
-    const idx = id ? items.findIndex((i) => i.id === id) : -1;
-    if (idx !== -1) setCursor(idx);
-  }, [items, cursor]);
+    if (id && items.some((i) => i.id === id)) setCursorId(id);
+  }, [items, cursorId]);
 
   useHotkeys({
-    j: () => setCursor((c) => moveSelection(c, 1, items.length)),
-    k: () => setCursor((c) => moveSelection(c, -1, items.length)),
+    j: () => setCursorId(items[moveSelection(cursor, 1, items.length)]?.id ?? null),
+    k: () => setCursorId(items[moveSelection(cursor, -1, items.length)]?.id ?? null),
     x: () => {
-      const tk = items[cursor];
-      if (tk) toggle(tk.id);
-    },
-    ' ': () => {
       const tk = items[cursor];
       if (tk) toggle(tk.id);
     },
@@ -115,6 +121,7 @@ export const QueuePage = () => {
 
   if (!me) return null;
   const chosen = items.filter((i) => selected.has(i.id));
+  const chosenIds = chosen.map((i) => i.id);
   return (
     <section aria-labelledby="page-title" className="grid gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -142,9 +149,9 @@ export const QueuePage = () => {
           set(f, mode);
         }}
       />
-      {selected.size > 0 ? (
+      {chosenIds.length > 0 ? (
         <BulkBar
-          selected={[...selected]}
+          selected={chosenIds}
           tickets={items}
           role={me.role}
           meId={me.id}
@@ -196,7 +203,6 @@ export const QueuePage = () => {
         </div>
       ) : null}
       <HotkeyHelp open={help} onClose={() => setHelp(false)} />
-      <span hidden>{chosen.length}</span>
     </section>
   );
 };

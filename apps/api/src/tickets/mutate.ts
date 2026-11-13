@@ -167,6 +167,19 @@ export const applyChanges = async (
       at: now,
     });
 
+  // a priority change can put a ticket past a deadline / into the warning window at once: the assignee is told, with
+  // the SAME dedupe keys as the background scan, so the scan never notifies about it a second time
+  if (changed.includes('priority') && fresh.assignee_id) {
+    const marks = [
+      ['first_response_warned_at', 'sla_warning', 'first_response_warning'],
+      ['first_response_breached_at', 'sla_breached', 'first_response_breach'],
+      ['resolution_warned_at', 'sla_warning', 'resolution_warning'],
+      ['resolution_breached_at', 'sla_breached', 'resolution_breach'],
+    ] as const;
+    for (const [col, type, key] of marks)
+      if (row[col] === null && fresh[col] !== null)
+        await notify(tx, { userId: fresh.assignee_id, type, ticketId: row.id, dedupeKey: key });
+  }
   if (changed.includes('assignee') && fresh.assignee_id && fresh.assignee_id !== actorId) {
     await notify(tx, {
       userId: fresh.assignee_id,

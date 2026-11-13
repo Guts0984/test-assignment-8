@@ -14,6 +14,7 @@ import {
   csvArray,
   isoDateTimeSchema,
   subjectSchema,
+  tagSchema,
   tagsSchema,
   textSchema,
   uuidSchema,
@@ -130,7 +131,8 @@ const listTicketsQueryBase = z
       .enum(['true', 'false'])
       .transform((v) => v === 'true')
       .optional(),
-    tags: csvArray(z.string().min(1).max(LIMITS.tagMax)).optional(),
+    // stored tags are lower-case, so the filter is too (?tags=VIP finds "vip")
+    tags: csvArray(tagSchema).optional(),
     createdFrom: isoDateTimeSchema.optional(),
     createdTo: isoDateTimeSchema.optional(),
     q: z.string().trim().min(1).max(LIMITS.searchMax).optional(),
@@ -142,7 +144,8 @@ const listTicketsQueryBase = z
   .strict();
 
 export const listTicketsQuerySchema = listTicketsQueryBase.refine(
-  (v) => !v.createdFrom || !v.createdTo || v.createdFrom <= v.createdTo,
+  // compare INSTANTS, not strings: "…T10:00+02:00" is earlier than "…T09:00Z"
+  (v) => !v.createdFrom || !v.createdTo || Date.parse(v.createdFrom) <= Date.parse(v.createdTo),
   {
     message: 'createdFrom must not be after createdTo',
     path: ['createdFrom'],
@@ -180,6 +183,7 @@ export const BULK_SKIP_REASONS = [
   'closed',
   'unchanged',
   'assignee_not_eligible',
+  'invalid_value', // e.g. the result would exceed the tag limit
 ] as const;
 export const bulkResultSchema = z.object({
   results: z.array(
